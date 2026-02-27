@@ -1,0 +1,10 @@
+# Binary
+amaru
+amaru.exe
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store

@@ -8,6 +8,7 @@ import (
 	"github.com/barelias/amaru/internal/manifest"
 	"github.com/barelias/amaru/internal/registry"
 	"github.com/barelias/amaru/internal/resolver"
+	"github.com/barelias/amaru/internal/types"
 	"github.com/barelias/amaru/internal/ui"
 
 	"github.com/spf13/cobra"
@@ -45,22 +46,15 @@ func runInstall(ctx context.Context) error {
 		return err
 	}
 
-	// Install skills
-	if len(m.Skills) > 0 {
-		ui.Header("Installing skills...")
-		for name, spec := range m.Skills {
-			if err := installItem(ctx, m, lock, clients, "skill", name, spec, lock.Skills); err != nil {
-				return fmt.Errorf("skill %s: %w", name, err)
-			}
-		}
-	}
-
-	// Install commands
-	if len(m.Commands) > 0 {
-		ui.Header("Installing commands...")
-		for name, spec := range m.Commands {
-			if err := installItem(ctx, m, lock, clients, "command", name, spec, lock.Commands); err != nil {
-				return fmt.Errorf("command %s: %w", name, err)
+	for _, itemType := range types.AllInstallableTypes() {
+		deps := m.DepsForType(itemType)
+		if len(deps) > 0 {
+			ui.Header("Installing %s...", itemType.Plural())
+			lockEntries := lock.EntriesForType(itemType)
+			for name, spec := range deps {
+				if err := installItem(ctx, m, lock, clients, string(itemType), name, spec, lockEntries); err != nil {
+					return fmt.Errorf("%s %s: %w", itemType, name, err)
+				}
 			}
 		}
 	}

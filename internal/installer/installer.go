@@ -14,17 +14,27 @@ import (
 const (
 	SkillsDir   = ".claude/skills"
 	CommandsDir = ".claude/commands"
+	AgentsDir   = ".claude/agents"
 )
+
+// DirForType returns the .claude subdirectory for a given item type.
+func DirForType(itemType string) string {
+	switch itemType {
+	case "skill":
+		return SkillsDir
+	case "command":
+		return CommandsDir
+	case "agent":
+		return AgentsDir
+	default:
+		return ".claude/" + itemType + "s"
+	}
+}
 
 // Install writes the downloaded files to the appropriate directory in the project.
 // Returns the content hash of the installed files.
 func Install(projectDir, itemType, name string, files []registry.File) (string, error) {
-	var targetDir string
-	if itemType == "skill" {
-		targetDir = filepath.Join(projectDir, SkillsDir, name)
-	} else {
-		targetDir = filepath.Join(projectDir, CommandsDir, name)
-	}
+	targetDir := filepath.Join(projectDir, DirForType(itemType), name)
 
 	// Clean target directory before installing
 	if err := os.RemoveAll(targetDir); err != nil {
@@ -94,23 +104,13 @@ func ComputeHash(dir string) (string, error) {
 
 // Uninstall removes the installed files for a skill or command.
 func Uninstall(projectDir, itemType, name string) error {
-	var targetDir string
-	if itemType == "skill" {
-		targetDir = filepath.Join(projectDir, SkillsDir, name)
-	} else {
-		targetDir = filepath.Join(projectDir, CommandsDir, name)
-	}
+	targetDir := filepath.Join(projectDir, DirForType(itemType), name)
 	return os.RemoveAll(targetDir)
 }
 
-// IsInstalled checks if a skill or command is installed locally.
+// IsInstalled checks if an item is installed locally.
 func IsInstalled(projectDir, itemType, name string) bool {
-	var targetDir string
-	if itemType == "skill" {
-		targetDir = filepath.Join(projectDir, SkillsDir, name)
-	} else {
-		targetDir = filepath.Join(projectDir, CommandsDir, name)
-	}
+	targetDir := filepath.Join(projectDir, DirForType(itemType), name)
 	info, err := os.Stat(targetDir)
 	return err == nil && info.IsDir()
 }

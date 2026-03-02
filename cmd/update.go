@@ -8,6 +8,7 @@ import (
 	"github.com/barelias/amaru/internal/manifest"
 	"github.com/barelias/amaru/internal/registry"
 	"github.com/barelias/amaru/internal/resolver"
+	"github.com/barelias/amaru/internal/types"
 	"github.com/barelias/amaru/internal/ui"
 
 	"github.com/Masterminds/semver/v3"
@@ -50,31 +51,18 @@ func runUpdate(ctx context.Context, filterName string) error {
 
 	updated := 0
 
-	// Update skills
-	for name, spec := range m.Skills {
-		if filterName != "" && name != filterName {
-			continue
-		}
-		did, err := updateItem(ctx, m, lock, clients, "skill", name, spec, lock.Skills)
-		if err != nil {
-			return fmt.Errorf("skill %s: %w", name, err)
-		}
-		if did {
-			updated++
-		}
-	}
-
-	// Update commands
-	for name, spec := range m.Commands {
-		if filterName != "" && name != filterName {
-			continue
-		}
-		did, err := updateItem(ctx, m, lock, clients, "command", name, spec, lock.Commands)
-		if err != nil {
-			return fmt.Errorf("command %s: %w", name, err)
-		}
-		if did {
-			updated++
+	for _, itemType := range types.AllInstallableTypes() {
+		for name, spec := range m.DepsForType(itemType) {
+			if filterName != "" && name != filterName {
+				continue
+			}
+			did, err := updateItem(ctx, m, lock, clients, string(itemType), name, spec, lock.EntriesForType(itemType))
+			if err != nil {
+				return fmt.Errorf("%s %s: %w", itemType, name, err)
+			}
+			if did {
+				updated++
+			}
 		}
 	}
 

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/barelias/amaru/internal/types"
 )
 
 const ManifestFile = "amaru.json"
@@ -14,7 +16,16 @@ type Manifest struct {
 	Registries map[string]RegistryConfig `json:"registries"`
 	Skills     map[string]DependencySpec `json:"skills,omitempty"`
 	Commands   map[string]DependencySpec `json:"commands,omitempty"`
+	Agents     map[string]DependencySpec `json:"agents,omitempty"`
+	Context    *ContextConfig            `json:"context,omitempty"`
 	Ignored    []string                  `json:"ignored,omitempty"`
+}
+
+// ContextConfig holds the configuration for context documentation sync.
+type ContextConfig struct {
+	Registry string `json:"registry"`
+	Project  string `json:"project"`
+	Path     string `json:"path,omitempty"`
 }
 
 type RegistryConfig struct {
@@ -139,6 +150,65 @@ func (m *Manifest) IsIgnored(name string) bool {
 	for _, ignored := range m.Ignored {
 		if ignored == name {
 			return true
+		}
+	}
+	return false
+}
+
+// DepsForType returns the dependency map for the given item type.
+func (m *Manifest) DepsForType(t types.ItemType) map[string]DependencySpec {
+	switch t {
+	case types.Skill:
+		return m.Skills
+	case types.Command:
+		return m.Commands
+	case types.Agent:
+		return m.Agents
+	default:
+		return nil
+	}
+}
+
+// SetDep sets a dependency in the appropriate map, initializing if needed.
+func (m *Manifest) SetDep(t types.ItemType, name string, spec DependencySpec) {
+	switch t {
+	case types.Skill:
+		if m.Skills == nil {
+			m.Skills = make(map[string]DependencySpec)
+		}
+		m.Skills[name] = spec
+	case types.Command:
+		if m.Commands == nil {
+			m.Commands = make(map[string]DependencySpec)
+		}
+		m.Commands[name] = spec
+	case types.Agent:
+		if m.Agents == nil {
+			m.Agents = make(map[string]DependencySpec)
+		}
+		m.Agents[name] = spec
+	}
+}
+
+// AllDeps iterates over all installable types and calls fn for each dependency.
+func (m *Manifest) AllDeps(fn func(t types.ItemType, name string, spec DependencySpec) error) error {
+	for _, t := range types.AllInstallableTypes() {
+		for name, spec := range m.DepsForType(t) {
+			if err := fn(t, name, spec); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// HasDep returns true if the given name exists in any installable type.
+func (m *Manifest) HasDep(name string) bool {
+	for _, t := range types.AllInstallableTypes() {
+		if deps := m.DepsForType(t); deps != nil {
+			if _, ok := deps[name]; ok {
+				return true
+			}
 		}
 	}
 	return false

@@ -36,6 +36,7 @@ func runInit() error {
 		Registries: make(map[string]manifest.RegistryConfig),
 		Skills:     make(map[string]manifest.DependencySpec),
 		Commands:   make(map[string]manifest.DependencySpec),
+		Agents:     make(map[string]manifest.DependencySpec),
 	}
 
 	for {

@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/barelias/amaru/internal/types"
 )
 
 const LockFile = "amaru.lock"
@@ -14,6 +16,7 @@ type Lock struct {
 	LockedAt string                  `json:"locked_at"`
 	Skills   map[string]LockedEntry  `json:"skills,omitempty"`
 	Commands map[string]LockedEntry  `json:"commands,omitempty"`
+	Agents   map[string]LockedEntry  `json:"agents,omitempty"`
 }
 
 type LockedEntry struct {
@@ -32,6 +35,7 @@ func LoadLock(dir string) (*Lock, error) {
 			return &Lock{
 				Skills:   make(map[string]LockedEntry),
 				Commands: make(map[string]LockedEntry),
+				Agents:   make(map[string]LockedEntry),
 			}, nil
 		}
 		return nil, fmt.Errorf("reading %s: %w", LockFile, err)
@@ -47,7 +51,24 @@ func LoadLock(dir string) (*Lock, error) {
 	if l.Commands == nil {
 		l.Commands = make(map[string]LockedEntry)
 	}
+	if l.Agents == nil {
+		l.Agents = make(map[string]LockedEntry)
+	}
 	return &l, nil
+}
+
+// EntriesForType returns the lock entries map for the given item type.
+func (l *Lock) EntriesForType(t types.ItemType) map[string]LockedEntry {
+	switch t {
+	case types.Skill:
+		return l.Skills
+	case types.Command:
+		return l.Commands
+	case types.Agent:
+		return l.Agents
+	default:
+		return nil
+	}
 }
 
 // SaveLock writes amaru.lock to the given directory.

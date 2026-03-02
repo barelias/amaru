@@ -105,6 +105,27 @@ func TestHashDifferentContent(t *testing.T) {
 	}
 }
 
+func TestDirForType(t *testing.T) {
+	tests := []struct {
+		itemType string
+		want     string
+	}{
+		{"skill", SkillsDir},
+		{"command", CommandsDir},
+		{"agent", AgentsDir},
+		{"widget", ".claude/widgets"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.itemType, func(t *testing.T) {
+			got := DirForType(tt.itemType)
+			if got != tt.want {
+				t.Errorf("DirForType(%s) = %s, want %s", tt.itemType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUninstall(t *testing.T) {
 	dir := t.TempDir()
 	files := []registry.File{

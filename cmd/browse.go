@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/barelias/amaru/internal/types"
 	"github.com/barelias/amaru/internal/ui"
 
 	"github.com/spf13/cobra"
@@ -14,7 +15,7 @@ var browseRegistry string
 
 var browseCmd = &cobra.Command{
 	Use:   "browse",
-	Short: "Lista skills/commands disponíveis nos registries",
+	Short: "Lista skills/commands/agents disponíveis nos registries",
 	Long:  "Lista tudo disponível nos registries configurados (discovery).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runBrowse(cmd.Context())
@@ -55,30 +56,22 @@ func runBrowse(ctx context.Context) error {
 
 		fmt.Printf("\n[%s] %s\n", ui.Bold(alias), regConf.URL)
 
-		if len(idx.Skills) > 0 {
-			fmt.Println("  Skills:")
-			var rows [][]string
-			for name, entry := range idx.Skills {
-				tags := ""
-				if len(entry.Tags) > 0 {
-					tags = "[" + strings.Join(entry.Tags, ", ") + "]"
+		for _, itemType := range types.AllInstallableTypes() {
+			entries := idx.EntriesForType(itemType)
+			if len(entries) > 0 {
+				label := string(itemType.Plural())
+				label = strings.ToUpper(label[:1]) + label[1:]
+				fmt.Printf("  %s:\n", label)
+				var rows [][]string
+				for name, entry := range entries {
+					tags := ""
+					if len(entry.Tags) > 0 {
+						tags = "[" + strings.Join(entry.Tags, ", ") + "]"
+					}
+					rows = append(rows, []string{"    " + name, entry.Latest, tags, entry.Description})
 				}
-				rows = append(rows, []string{"    " + name, entry.Latest, tags, entry.Description})
+				ui.Table(rows)
 			}
-			ui.Table(rows)
-		}
-
-		if len(idx.Commands) > 0 {
-			fmt.Println("  Commands:")
-			var rows [][]string
-			for name, entry := range idx.Commands {
-				tags := ""
-				if len(entry.Tags) > 0 {
-					tags = "[" + strings.Join(entry.Tags, ", ") + "]"
-				}
-				rows = append(rows, []string{"    " + name, entry.Latest, tags, entry.Description})
-			}
-			ui.Table(rows)
 		}
 	}
 

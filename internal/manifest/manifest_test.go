@@ -2,9 +2,12 @@ package manifest
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/barelias/amaru/internal/types"
 )
 
 func TestDependencySpecUnmarshalShorthand(t *testing.T) {
@@ -190,6 +193,83 @@ func TestResolveRegistry(t *testing.T) {
 	_, err = m.ResolveRegistry(DependencySpec{Version: "^1.0.0"})
 	if err == nil {
 		t.Error("expected error for ambiguous registry")
+	}
+}
+
+func TestDepsForType(t *testing.T) {
+	m := &Manifest{
+		Skills:   map[string]DependencySpec{"research": {Version: "^1.0.0"}},
+		Commands: map[string]DependencySpec{"bootstrap": {Version: "^2.0.0"}},
+		Agents:   map[string]DependencySpec{"coder": {Version: "^1.0.0"}},
+	}
+
+	tests := []struct {
+		name     string
+		itemType types.ItemType
+		wantKey  string
+	}{
+		{"skill", types.Skill, "research"},
+		{"command", types.Command, "bootstrap"},
+		{"agent", types.Agent, "coder"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps := m.DepsForType(tt.itemType)
+			if deps == nil {
+				t.Fatal("expected non-nil deps")
+			}
+			if _, ok := deps[tt.wantKey]; !ok {
+				t.Errorf("expected key %s in deps", tt.wantKey)
+			}
+		})
+	}
+
+	// Unknown type returns nil
+	if m.DepsForType(types.ItemType("widget")) != nil {
+		t.Error("expected nil for unknown type")
+	}
+}
+
+func TestAllDeps(t *testing.T) {
+	m := &Manifest{
+		Skills:   map[string]DependencySpec{"research": {Version: "^1.0.0"}},
+		Commands: map[string]DependencySpec{"bootstrap": {Version: "^2.0.0"}},
+		Agents:   map[string]DependencySpec{"coder": {Version: "^1.0.0"}},
+	}
+
+	var names []string
+	err := m.AllDeps(func(t types.ItemType, name string, spec DependencySpec) error {
+		names = append(names, name)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(names) != 3 {
+		t.Errorf("expected 3 deps, got %d", len(names))
+	}
+
+	// Test error propagation
+	err = m.AllDeps(func(t types.ItemType, name string, spec DependencySpec) error {
+		return fmt.Errorf("stop")
+	})
+	if err == nil {
+		t.Error("expected error propagation")
+	}
+}
+
+func TestIsIgnored(t *testing.T) {
+	m := &Manifest{Ignored: []string{"research", "bootstrap"}}
+
+	if !m.IsIgnored("research") {
+		t.Error("expected research to be ignored")
+	}
+	if !m.IsIgnored("bootstrap") {
+		t.Error("expected bootstrap to be ignored")
+	}
+	if m.IsIgnored("plan") {
+		t.Error("expected plan to not be ignored")
 	}
 }
 

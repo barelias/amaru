@@ -94,6 +94,37 @@ func TestIsUpgradableAlreadyLatest(t *testing.T) {
 	}
 }
 
+func TestLatestAvailable(t *testing.T) {
+	t.Run("multiple versions", func(t *testing.T) {
+		avail := versions("1.0.0", "2.3.0", "1.5.0")
+		got := LatestAvailable(avail)
+		if got == nil {
+			t.Fatal("expected non-nil result")
+		}
+		if got.String() != "2.3.0" {
+			t.Errorf("expected 2.3.0, got %s", got.String())
+		}
+	})
+
+	t.Run("single version", func(t *testing.T) {
+		avail := versions("1.0.0")
+		got := LatestAvailable(avail)
+		if got == nil {
+			t.Fatal("expected non-nil result")
+		}
+		if got.String() != "1.0.0" {
+			t.Errorf("expected 1.0.0, got %s", got.String())
+		}
+	})
+
+	t.Run("empty list", func(t *testing.T) {
+		got := LatestAvailable(nil)
+		if got != nil {
+			t.Errorf("expected nil, got %s", got.String())
+		}
+	})
+}
+
 func TestClassifyUpdate(t *testing.T) {
 	tests := []struct {
 		from, to string

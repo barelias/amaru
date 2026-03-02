@@ -1,8 +1,8 @@
 # 🐍 amaru
 
-**Skills & commands manager for Claude Code.**
+**Skills, commands & agents manager for Claude Code.**
 
-amaru connects your projects to centralized skill/command registries hosted on GitHub. It tracks versions, detects local drift, warns about updates, and keeps your whole team in sync — all through a simple manifest file.
+amaru connects your projects to centralized registries hosted on GitHub — managing skills, commands, and agents. It tracks versions, detects local drift, warns about updates, syncs shared context documentation, and keeps your whole team in sync — all through a simple manifest file.
 
 > *The name **amaru** comes from the mythical Andean serpent — a symbol of transformation and connection between worlds. The tool connects centralized knowledge (registries) with local context (projects).*
 
@@ -31,14 +31,18 @@ amaru init
 # 2. Discover what's available
 amaru browse
 
-# 3. Add skills and commands
+# 3. Add skills, commands, and agents
 amaru add research
-amaru add dev/bootstrap --command
+amaru add dev/bootstrap --type command
+amaru add code-reviewer --type agent
 
 # 4. Install everything
 amaru install
 
-# 5. Check for updates later
+# 5. Set up shared context documentation
+amaru context init
+
+# 6. Check for updates later
 amaru check
 ```
 
@@ -48,10 +52,10 @@ amaru manages two files at the root of your project:
 
 | File | Purpose | Committed? |
 |---|---|---|
-| `amaru.json` | Manifest — declares registries, skills, and commands with version ranges | Yes |
+| `amaru.json` | Manifest — declares registries, skills, commands, agents, and context config | Yes |
 | `amaru.lock` | Lock — resolved versions, hashes, timestamps for reproducibility | Yes |
 
-Skills are installed to `.claude/skills/` and commands to `.claude/commands/`, matching the Claude Code convention.
+Skills are installed to `.claude/skills/`, commands to `.claude/commands/`, and agents to `.claude/agents/`, matching the Claude Code convention.
 
 ### Manifest (`amaru.json`)
 
@@ -75,6 +79,14 @@ Skills are installed to `.claude/skills/` and commands to `.claude/commands/`, m
   },
   "commands": {
     "dev/bootstrap": { "version": "^2.0.0", "registry": "main" }
+  },
+  "agents": {
+    "code-reviewer": { "version": "^1.0.0", "registry": "main" }
+  },
+  "context": {
+    "registry": "main",
+    "project": "my-app",
+    "path": "docs/context"
   }
 }
 ```
@@ -90,6 +102,9 @@ Skills are installed to `.claude/skills/` and commands to `.claude/commands/`, m
   "skills": {
     "research": "^1.0.0",
     "plan": "^1.0.0"
+  },
+  "agents": {
+    "code-reviewer": "^1.0.0"
   }
 }
 ```
@@ -127,6 +142,9 @@ Installing skills...
 
 Installing commands...
   ✓ dev/bootstrap@2.0.0 (main)
+
+Installing agents...
+  ✓ code-reviewer@1.0.0 (main)
 
 Lock file updated.
 ```
@@ -189,15 +207,19 @@ Skills:
 
 Commands:
   dev/bootstrap 2.0.0  ✓ up-to-date    [main]
+
+Agents:
+  code-reviewer 1.0.0  ✓ up-to-date    [main]
 ```
 
-### `amaru add <name> [--command] [--registry <alias>]`
+### `amaru add <name> [--type <type>] [--registry <alias>]`
 
-Adds a skill or command to the manifest and installs it in one step.
+Adds a skill, command, or agent to the manifest and installs it in one step.
 
 ```bash
-amaru add research                         # add a skill
-amaru add dev/bootstrap --command          # add a command
+amaru add research                         # add a skill (default)
+amaru add dev/bootstrap --type command     # add a command
+amaru add code-reviewer --type agent       # add an agent
 amaru add deploycheck --registry platform  # specify registry
 ```
 
@@ -211,14 +233,16 @@ Discover what's available across your configured registries.
 $ amaru browse
 [main] github:acme-org/acme-skills
   Skills:
-    research     1.0.3  [dev, core]      Search codebase and return compressed context
-    plan         1.0.1  [dev, core]      Create plans with code snippets
+    research      1.0.3  [dev, core]      Search codebase and return compressed context
+    plan          1.0.1  [dev, core]      Create plans with code snippets
   Commands:
-    dev/bootstrap 2.0.0  [dev, setup]    Project bootstrap
+    dev/bootstrap 2.0.0  [dev, setup]     Project bootstrap
+  Agents:
+    code-reviewer 1.0.0  [dev, review]    Review code changes with context
 
 [platform] github:acme-org/platform-skills
   Skills:
-    deploycheck  1.0.0  [platform]       Verify deploy prerequisites
+    deploycheck   1.0.0  [platform]       Verify deploy prerequisites
 ```
 
 ### `amaru ignore <name>` / `amaru unignore <name>`
@@ -229,6 +253,68 @@ Accept local drift for a specific item — `amaru check` will stop warning about
 amaru ignore plan        # accept local edits
 amaru unignore plan      # re-enable drift warnings
 ```
+
+### `amaru context init`
+
+Sets up shared context documentation for your project. Sparse-clones the context directory from your registry into `.claude/.amaru-context/` and symlinks it to `docs/context`.
+
+```bash
+$ amaru context init
+Cloning context for project "my-app"...
+  ✓ Sparse checkout from main registry
+  ✓ Symlinked to docs/context
+  ✓ Added .claude/.amaru-context/ to .gitignore
+  ✓ Installed git hooks (post-checkout, post-commit)
+```
+
+This gives your project access to shared brainstorms, plans, and solutions from the centralized registry.
+
+### `amaru context sync`
+
+Pulls the latest context documentation from the registry.
+
+```bash
+amaru context sync
+```
+
+This runs automatically via the post-checkout git hook after branch switches.
+
+### `amaru context push`
+
+Stages and pushes local context changes back to the centralized registry.
+
+```bash
+amaru context push
+```
+
+The post-commit git hook auto-pushes when it detects changes to context files.
+
+### `amaru context path`
+
+Prints the local context directory path.
+
+```bash
+$ amaru context path
+docs/context
+```
+
+### `amaru repo init <path> --project <name>`
+
+Scaffolds a new registry repository with the standard directory structure.
+
+```bash
+$ amaru repo init /path/to/registry --project my-app
+Creating registry at /path/to/registry...
+  ✓ registry.json
+  ✓ AGENTS.md
+  ✓ skills/
+  ✓ commands/
+  ✓ agents/
+  ✓ context/my-app/
+  ✓ .sparse-profiles/my-app
+```
+
+The generated structure includes `AGENTS.md` navigation files and a per-project context directory with `brainstorms/`, `plans/`, and `solutions/` subdirectories.
 
 ## Authentication
 
@@ -253,6 +339,10 @@ A registry is just a GitHub repo with this layout:
 
 ```
 my-skills-registry/
+├── registry.json              # Auto-generated index (by CI)
+├── AGENTS.md                  # Root navigation + registry structure
+├── .sparse-profiles/          # Sapling sparse checkout profiles
+│   └── my-app
 ├── skills/
 │   ├── research/
 │   │   ├── skill.md           # The skill content
@@ -266,14 +356,43 @@ my-skills-registry/
 │       └── bootstrap/
 │           ├── command.md
 │           └── manifest.json
-└── registry.json              # Auto-generated index (by CI)
+├── agents/
+│   └── code-reviewer/
+│       ├── agent.md
+│       └── manifest.json
+└── context/
+    └── my-app/
+        ├── AGENTS.md          # Per-project navigation
+        ├── brainstorms/
+        ├── plans/
+        └── solutions/
 ```
 
-Versions are tracked via git tags: `skill/research/1.0.3`, `command/dev/bootstrap/2.0.0`.
+Versions are tracked via git tags: `skill/research/1.0.3`, `command/dev/bootstrap/2.0.0`, `agent/code-reviewer/1.0.0`.
 
-amaru accesses registries through the GitHub API — it never clones the repo. It only downloads the files it needs.
+amaru accesses registries through the GitHub API for installable items. For context sync, it uses sparse checkout via Sapling (preferred) or Git.
 
-## Session Start Hook
+## VCS Support
+
+amaru supports two version control backends for context sync:
+
+| Backend | Detection | Sparse checkout method |
+|---|---|---|
+| **Sapling** | `sl` on PATH | `sl clone --enable-profile` with sparse profiles |
+| **Git** | Fallback | `git clone --filter=blob:none --no-checkout` + `git sparse-checkout set` |
+
+Sapling is preferred when available — it handles sparse checkouts of large registries more efficiently. amaru auto-detects the available backend.
+
+## Hooks
+
+`amaru context init` installs two git hooks automatically:
+
+- **post-checkout** — runs `amaru context sync` after branch switches
+- **post-commit** — detects context file changes and auto-pushes via `amaru context push`
+
+Hooks are idempotent (safe to re-install) and fail silently — they never block your workflow.
+
+### Session Start Hook
 
 To get automatic update warnings when you start a Claude Code session, add a hook:
 

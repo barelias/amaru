@@ -7,6 +7,7 @@ import (
 	"github.com/barelias/amaru/internal/installer"
 	"github.com/barelias/amaru/internal/manifest"
 	"github.com/barelias/amaru/internal/registry"
+	"github.com/barelias/amaru/internal/types"
 	"github.com/barelias/amaru/internal/ui"
 
 	"github.com/Masterminds/semver/v3"
@@ -15,7 +16,7 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "Lista skills e commands instalados",
+	Short: "Lista skills, commands e agents instalados",
 	Long:  "Lista tudo instalado no projeto com status e origem.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runList(cmd.Context())
@@ -49,38 +50,30 @@ func runList(ctx context.Context) error {
 		}
 	}
 
-	// Print skills
-	if len(lock.Skills) > 0 {
-		ui.Header("Skills:")
-		var rows [][]string
-		for name, entry := range lock.Skills {
-			status := statusForItem(entry, "skill", name, indexes, m)
-			rows = append(rows, []string{name, entry.Version, status, fmt.Sprintf("[%s]", entry.Registry)})
+	hasItems := false
+	for _, itemType := range types.AllInstallableTypes() {
+		entries := lock.EntriesForType(itemType)
+		if len(entries) > 0 {
+			hasItems = true
+			ui.Header("%s:", itemType.Plural())
+			var rows [][]string
+			for name, entry := range entries {
+				status := statusForItem(entry, itemType, name, indexes, m)
+				rows = append(rows, []string{name, entry.Version, status, fmt.Sprintf("[%s]", entry.Registry)})
+			}
+			ui.Table(rows)
 		}
-		ui.Table(rows)
 	}
 
-	// Print commands
-	if len(lock.Commands) > 0 {
-		ui.Header("Commands:")
-		var rows [][]string
-		for name, entry := range lock.Commands {
-			status := statusForItem(entry, "command", name, indexes, m)
-			rows = append(rows, []string{name, entry.Version, status, fmt.Sprintf("[%s]", entry.Registry)})
-		}
-		ui.Table(rows)
-	}
-
-	if len(lock.Skills) == 0 && len(lock.Commands) == 0 {
-		fmt.Println("Nenhuma skill ou command instalado. Rode 'amaru install' primeiro.")
+	if !hasItems {
+		fmt.Println("Nenhum item instalado. Rode 'amaru install' primeiro.")
 	}
 
 	return nil
 }
 
-func statusForItem(entry manifest.LockedEntry, itemType, name string, indexes map[string]*registry.RegistryIndex, m *manifest.Manifest) string {
-	// Check if files are present locally
-	if !installer.IsInstalled(".", itemType, name) {
+func statusForItem(entry manifest.LockedEntry, itemType types.ItemType, name string, indexes map[string]*registry.RegistryIndex, m *manifest.Manifest) string {
+	if !installer.IsInstalled(".", string(itemType), name) {
 		return ui.Error("✗ not installed")
 	}
 
@@ -89,12 +82,8 @@ func statusForItem(entry manifest.LockedEntry, itemType, name string, indexes ma
 		return "?"
 	}
 
-	var regEntry registry.RegistryEntry
-	if itemType == "skill" {
-		regEntry, ok = idx.Skills[name]
-	} else {
-		regEntry, ok = idx.Commands[name]
-	}
+	regEntries := idx.EntriesForType(itemType)
+	regEntry, ok := regEntries[name]
 	if !ok {
 		return ui.Success("✓ up-to-date")
 	}

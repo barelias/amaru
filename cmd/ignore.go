@@ -45,9 +45,7 @@ func runIgnore(name string) error {
 	}
 
 	// Check if item exists in manifest
-	_, inSkills := m.Skills[name]
-	_, inCommands := m.Commands[name]
-	if !inSkills && !inCommands {
+	if !m.HasDep(name) {
 		return fmt.Errorf("%s não encontrado no manifesto", name)
 	}
 

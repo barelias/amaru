@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/barelias/amaru/internal/types"
 )
 
 // RegistryIndex is the parsed registry.json from the remote registry.
@@ -11,6 +12,21 @@ type RegistryIndex struct {
 	UpdatedAt string                    `json:"updated_at"`
 	Skills    map[string]RegistryEntry  `json:"skills,omitempty"`
 	Commands  map[string]RegistryEntry  `json:"commands,omitempty"`
+	Agents    map[string]RegistryEntry  `json:"agents,omitempty"`
+}
+
+// EntriesForType returns the registry entries for a given item type.
+func (idx *RegistryIndex) EntriesForType(t types.ItemType) map[string]RegistryEntry {
+	switch t {
+	case types.Skill:
+		return idx.Skills
+	case types.Command:
+		return idx.Commands
+	case types.Agent:
+		return idx.Agents
+	default:
+		return nil
+	}
 }
 
 // RegistryEntry is one skill or command in the registry index.
@@ -50,10 +66,10 @@ type Client interface {
 	// FetchIndex downloads and parses the registry.json index.
 	FetchIndex(ctx context.Context) (*RegistryIndex, error)
 
-	// ListVersions returns all available versions for a skill or command.
-	// itemType is "skill" or "command".
+	// ListVersions returns all available versions for an item.
+	// itemType is "skill", "command", or "agent".
 	ListVersions(ctx context.Context, itemType, name string) ([]*semver.Version, error)
 
-	// DownloadFiles downloads all files for a specific version of a skill or command.
+	// DownloadFiles downloads all files for a specific version of an item.
 	DownloadFiles(ctx context.Context, itemType, name, version string) ([]File, error)
 }

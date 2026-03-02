@@ -8,6 +8,7 @@ import (
 	"github.com/barelias/amaru/internal/manifest"
 	"github.com/barelias/amaru/internal/registry"
 	"github.com/barelias/amaru/internal/resolver"
+	"github.com/barelias/amaru/internal/types"
 
 	"github.com/Masterminds/semver/v3"
 )
@@ -44,47 +45,29 @@ type CheckResult struct {
 func Check(ctx context.Context, projectDir string, m *manifest.Manifest, lock *manifest.Lock, clients map[string]registry.Client) (*CheckResult, error) {
 	result := &CheckResult{}
 
-	// Check skills
-	for name, spec := range m.Skills {
-		regAlias, err := m.ResolveRegistry(spec)
-		if err != nil {
-			return nil, fmt.Errorf("skill %s: %w", name, err)
-		}
+	for _, itemType := range types.AllInstallableTypes() {
+		deps := m.DepsForType(itemType)
+		lockEntries := lock.EntriesForType(itemType)
 
-		client, ok := clients[regAlias]
-		if !ok {
-			return nil, fmt.Errorf("skill %s: no client for registry %q", name, regAlias)
-		}
+		for name, spec := range deps {
+			regAlias, err := m.ResolveRegistry(spec)
+			if err != nil {
+				return nil, fmt.Errorf("%s %s: %w", itemType, name, err)
+			}
 
-		locked, hasLock := lock.Skills[name]
-		if !hasLock {
-			continue // Not installed yet
-		}
+			client, ok := clients[regAlias]
+			if !ok {
+				return nil, fmt.Errorf("%s %s: no client for registry %q", itemType, name, regAlias)
+			}
 
-		if err := checkItem(ctx, result, "skill", name, regAlias, spec.Version, locked, client, projectDir, m.IsIgnored(name)); err != nil {
-			return nil, fmt.Errorf("checking skill %s: %w", name, err)
-		}
-	}
+			locked, hasLock := lockEntries[name]
+			if !hasLock {
+				continue
+			}
 
-	// Check commands
-	for name, spec := range m.Commands {
-		regAlias, err := m.ResolveRegistry(spec)
-		if err != nil {
-			return nil, fmt.Errorf("command %s: %w", name, err)
-		}
-
-		client, ok := clients[regAlias]
-		if !ok {
-			return nil, fmt.Errorf("command %s: no client for registry %q", name, regAlias)
-		}
-
-		locked, hasLock := lock.Commands[name]
-		if !hasLock {
-			continue
-		}
-
-		if err := checkItem(ctx, result, "command", name, regAlias, spec.Version, locked, client, projectDir, m.IsIgnored(name)); err != nil {
-			return nil, fmt.Errorf("checking command %s: %w", name, err)
+			if err := checkItem(ctx, result, string(itemType), name, regAlias, spec.Version, locked, client, projectDir, m.IsIgnored(name)); err != nil {
+				return nil, fmt.Errorf("checking %s %s: %w", itemType, name, err)
+			}
 		}
 	}
 
@@ -148,8 +131,5 @@ func checkItem(ctx context.Context, result *CheckResult, itemType, name, regAlia
 }
 
 func installedPath(projectDir, itemType, name string) string {
-	if itemType == "skill" {
-		return projectDir + "/" + installer.SkillsDir + "/" + name
-	}
-	return projectDir + "/" + installer.CommandsDir + "/" + name
+	return projectDir + "/" + installer.DirForType(itemType) + "/" + name
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/barelias/amaru/internal/types"
 )
 
 // GitHubClient implements Client using the GitHub API.
@@ -107,6 +108,9 @@ func (c *GitHubClient) FetchIndex(ctx context.Context) (*RegistryIndex, error) {
 	if index.Commands == nil {
 		index.Commands = make(map[string]RegistryEntry)
 	}
+	if index.Agents == nil {
+		index.Agents = make(map[string]RegistryEntry)
+	}
 	return &index, nil
 }
 
@@ -150,12 +154,7 @@ func (c *GitHubClient) DownloadFiles(ctx context.Context, itemType, name, versio
 	tag := fmt.Sprintf("%s/%s/%s", itemType, name, version)
 
 	// Determine the directory path in the repo
-	var dirPath string
-	if itemType == "skill" {
-		dirPath = "skills/" + name
-	} else {
-		dirPath = "commands/" + name
-	}
+	dirPath := types.ItemType(itemType).DirName() + "/" + name
 
 	return c.downloadDirectory(ctx, dirPath, tag, "")
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/barelias/amaru/internal/types"
 )
 
 func TestLoadLockNotExist(t *testing.T) {
@@ -17,6 +19,56 @@ func TestLoadLockNotExist(t *testing.T) {
 	}
 	if len(lock.Skills) != 0 || len(lock.Commands) != 0 {
 		t.Error("expected empty maps for missing lock file")
+	}
+}
+
+func TestEntriesForType(t *testing.T) {
+	lock := &Lock{
+		Skills:   map[string]LockedEntry{"research": {Version: "1.0.0"}},
+		Commands: map[string]LockedEntry{"bootstrap": {Version: "2.0.0"}},
+		Agents:   map[string]LockedEntry{"coder": {Version: "1.0.0"}},
+	}
+
+	tests := []struct {
+		name     string
+		itemType types.ItemType
+		wantKey  string
+	}{
+		{"skill", types.Skill, "research"},
+		{"command", types.Command, "bootstrap"},
+		{"agent", types.Agent, "coder"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entries := lock.EntriesForType(tt.itemType)
+			if entries == nil {
+				t.Fatal("expected non-nil entries")
+			}
+			if _, ok := entries[tt.wantKey]; !ok {
+				t.Errorf("expected key %s", tt.wantKey)
+			}
+		})
+	}
+
+	if lock.EntriesForType(types.ItemType("widget")) != nil {
+		t.Error("expected nil for unknown type")
+	}
+}
+
+func TestNewLockedEntry(t *testing.T) {
+	entry := NewLockedEntry("1.2.3", "main", "abc123")
+	if entry.Version != "1.2.3" {
+		t.Errorf("expected version 1.2.3, got %s", entry.Version)
+	}
+	if entry.Registry != "main" {
+		t.Errorf("expected registry main, got %s", entry.Registry)
+	}
+	if entry.Hash != "abc123" {
+		t.Errorf("expected hash abc123, got %s", entry.Hash)
+	}
+	if entry.InstalledAt == "" {
+		t.Error("expected installed_at to be set")
 	}
 }
 

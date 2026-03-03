@@ -18,15 +18,15 @@ var installForce bool
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Instala skills e commands do manifesto",
-	Long:  "Lê amaru.json, autentica nos registries, resolve versões, copia arquivos e gera amaru.lock.",
+	Short: "Install skills and commands from manifest",
+	Long:  "Reads amaru.json, authenticates with registries, resolves versions, copies files, and generates amaru.lock.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInstall(cmd.Context())
 	},
 }
 
 func init() {
-	installCmd.Flags().BoolVar(&installForce, "force", false, "Reinstala mesmo se lock existe e versões são compatíveis")
+	installCmd.Flags().BoolVar(&installForce, "force", false, "Reinstall even if lock exists and versions are compatible")
 	rootCmd.AddCommand(installCmd)
 }
 

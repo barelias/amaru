@@ -14,8 +14,8 @@ import (
 
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Gera amaru.json inicial interativamente",
-	Long:  "Cria um novo amaru.json com registries configurados interativamente.",
+	Short: "Generate initial amaru.json interactively",
+	Long:  "Create a new amaru.json with interactively configured registries.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInit()
 	},
@@ -85,7 +85,7 @@ func runInit() error {
 		}
 
 		// Add another?
-		fmt.Print("\nAdicionar outro registry? (y/N): ")
+		fmt.Print("\nAdd another registry? (y/N): ")
 		another, _ := reader.ReadString('\n')
 		another = strings.TrimSpace(strings.ToLower(another))
 		if another != "y" && another != "yes" {
@@ -98,7 +98,7 @@ func runInit() error {
 		return fmt.Errorf("saving manifest: %w", err)
 	}
 
-	fmt.Printf("\namaru.json criado. Rode `amaru browse` para ver skills disponíveis.\n")
+	fmt.Printf("\namaru.json created. Run `amaru browse` to see available skills.\n")
 	return nil
 }
 

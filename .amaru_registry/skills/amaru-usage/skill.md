@@ -1,3 +1,8 @@
+---
+description: This skill should be used when managing Claude Code skills, commands, or agents with amaru. It applies when the user asks to "add a skill", "install skills", "check for updates", "browse available skills", "update skills", or any amaru CLI workflow.
+allowed-tools: Bash(amaru:*)
+---
+
 # Amaru — Skills, Commands & Agents Manager
 
 Use the `amaru` CLI to manage Claude Code skills, commands, and agents from centralized GitHub registries.

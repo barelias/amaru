@@ -16,18 +16,18 @@ type RepoConfig struct {
 // ScaffoldRepo creates the full registry repo structure.
 func ScaffoldRepo(cfg RepoConfig) error {
 	dirs := []string{
-		"skills",
-		"commands",
-		"agents",
-		"context",
-		".sparse-profiles",
+		".amaru_registry/skills",
+		".amaru_registry/commands",
+		".amaru_registry/agents",
+		".amaru_registry/context",
+		".amaru_registry/.sparse-profiles",
 	}
 
 	if cfg.Project != "" {
 		dirs = append(dirs,
-			filepath.Join("context", cfg.Project, "brainstorms"),
-			filepath.Join("context", cfg.Project, "plans"),
-			filepath.Join("context", cfg.Project, "solutions"),
+			filepath.Join(".amaru_registry", "context", cfg.Project, "brainstorms"),
+			filepath.Join(".amaru_registry", "context", cfg.Project, "plans"),
+			filepath.Join(".amaru_registry", "context", cfg.Project, "solutions"),
 		)
 	}
 
@@ -37,14 +37,15 @@ func ScaffoldRepo(cfg RepoConfig) error {
 		}
 	}
 
-	// Write registry.json
+	// Write amaru_registry.json
 	registryJSON := map[string]interface{}{
-		"updated_at": "",
-		"skills":     map[string]interface{}{},
-		"commands":   map[string]interface{}{},
-		"agents":     map[string]interface{}{},
+		"amaru_version": "1",
+		"updated_at":    "",
+		"skills":        map[string]interface{}{},
+		"commands":      map[string]interface{}{},
+		"agents":        map[string]interface{}{},
 	}
-	if err := writeJSON(filepath.Join(cfg.Dir, "registry.json"), registryJSON); err != nil {
+	if err := writeJSON(filepath.Join(cfg.Dir, "amaru_registry.json"), registryJSON); err != nil {
 		return err
 	}
 
@@ -54,7 +55,7 @@ func ScaffoldRepo(cfg RepoConfig) error {
 	}
 
 	// Write .gitkeep files in empty directories
-	for _, d := range []string{"skills", "commands", "agents"} {
+	for _, d := range []string{".amaru_registry/skills", ".amaru_registry/commands", ".amaru_registry/agents"} {
 		gitkeep := filepath.Join(cfg.Dir, d, ".gitkeep")
 		if err := os.WriteFile(gitkeep, []byte(""), 0644); err != nil {
 			return err
@@ -64,12 +65,12 @@ func ScaffoldRepo(cfg RepoConfig) error {
 	// Write per-project files if project specified
 	if cfg.Project != "" {
 		agentsContent := ProjectAgentsMD(cfg.Project)
-		if err := os.WriteFile(filepath.Join(cfg.Dir, "context", cfg.Project, "AGENTS.md"), []byte(agentsContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(cfg.Dir, ".amaru_registry", "context", cfg.Project, "AGENTS.md"), []byte(agentsContent), 0644); err != nil {
 			return err
 		}
 
 		profileContent := SparseProfile(cfg.Project)
-		if err := os.WriteFile(filepath.Join(cfg.Dir, ".sparse-profiles", cfg.Project), []byte(profileContent), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(cfg.Dir, ".amaru_registry", ".sparse-profiles", cfg.Project), []byte(profileContent), 0644); err != nil {
 			return err
 		}
 	}
@@ -97,28 +98,29 @@ and context documentation for Claude Code projects.
 
 ` + "```" + `
 registry/
-├── registry.json          # Package index (auto-updated by CI)
-├── AGENTS.md              # This file — top-level navigation
-├── .sparse-profiles/      # Sapling sparse profiles for selective cloning
-│   └── <project-name>     # One profile per consuming project
-├── skills/                # Claude Code skills (versioned packages)
-│   └── <skill-name>/
-│       ├── manifest.json
-│       └── skill.md
-├── commands/              # Claude Code commands (versioned packages)
-│   └── <command-name>/
-│       ├── manifest.json
-│       └── command.md
-├── agents/                # Claude Code agent definitions (versioned packages)
-│   └── <agent-name>/
-│       ├── manifest.json
-│       └── agent.md
-└── context/               # Project context documentation (NOT versioned)
-    └── <project-name>/
-        ├── AGENTS.md      # Per-project navigation + repo info
-        ├── brainstorms/   # Early-stage ideas and explorations
-        ├── plans/         # Concrete implementation plans
-        └── solutions/     # Finalized designs and decisions
+├── amaru_registry.json        # Package index (auto-updated by CI)
+├── AGENTS.md                  # This file — top-level navigation
+└── .amaru_registry/           # All registry content
+    ├── .sparse-profiles/      # Sapling sparse profiles for selective cloning
+    │   └── <project-name>     # One profile per consuming project
+    ├── skills/                # Claude Code skills (versioned packages)
+    │   └── <skill-name>/
+    │       ├── manifest.json
+    │       └── skill.md
+    ├── commands/              # Claude Code commands (versioned packages)
+    │   └── <command-name>/
+    │       ├── manifest.json
+    │       └── command.md
+    ├── agents/                # Claude Code agent definitions (versioned packages)
+    │   └── <agent-name>/
+    │       ├── manifest.json
+    │       └── agent.md
+    └── context/               # Project context documentation (NOT versioned)
+        └── <project-name>/
+            ├── AGENTS.md      # Per-project navigation + repo info
+            ├── brainstorms/   # Early-stage ideas and explorations
+            ├── plans/         # Concrete implementation plans
+            └── solutions/     # Finalized designs and decisions
 ` + "```" + `
 
 ## Versioning
@@ -142,7 +144,7 @@ amaru context sync            # Pull latest context
 
 ## Sparse Profiles
 
-The ` + "`.sparse-profiles/`" + ` directory contains Sapling sparse profiles.
+The ` + "`.amaru_registry/.sparse-profiles/`" + ` directory contains Sapling sparse profiles.
 Each profile is named after a project and defines which paths that project
 needs from this repository. If Sapling is not available, amaru falls back
 to git sparse-checkout.
@@ -207,9 +209,9 @@ func SparseProfile(project string) string {
 	return fmt.Sprintf(`# Sapling sparse profile for %s
 
 [include]
-context/%s/**
+.amaru_registry/context/%s/**
 AGENTS.md
-registry.json
+amaru_registry.json
 
 [exclude]
 *

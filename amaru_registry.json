@@ -1,0 +1,13 @@
+{
+  "amaru_version": "1",
+  "updated_at": "2026-03-03",
+  "skills": {
+    "amaru-usage": {
+      "latest": "",
+      "tags": ["amaru", "tooling", "meta"],
+      "description": "Teaches Claude Code how to use amaru to manage skills, commands, and agents"
+    }
+  },
+  "commands": {},
+  "agents": {}
+}

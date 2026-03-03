@@ -16,7 +16,7 @@ func TestScaffoldRepo(t *testing.T) {
 	}
 
 	// Verify required directories
-	for _, d := range []string{"skills", "commands", "agents", "context", ".sparse-profiles"} {
+	for _, d := range []string{".amaru_registry/skills", ".amaru_registry/commands", ".amaru_registry/agents", ".amaru_registry/context", ".amaru_registry/.sparse-profiles"} {
 		info, err := os.Stat(filepath.Join(dir, d))
 		if err != nil {
 			t.Errorf("expected directory %s: %v", d, err)
@@ -25,17 +25,20 @@ func TestScaffoldRepo(t *testing.T) {
 		}
 	}
 
-	// Verify registry.json
-	data, err := os.ReadFile(filepath.Join(dir, "registry.json"))
+	// Verify amaru_registry.json
+	data, err := os.ReadFile(filepath.Join(dir, "amaru_registry.json"))
 	if err != nil {
-		t.Fatalf("reading registry.json: %v", err)
+		t.Fatalf("reading amaru_registry.json: %v", err)
 	}
 	var idx map[string]interface{}
 	if err := json.Unmarshal(data, &idx); err != nil {
-		t.Fatalf("parsing registry.json: %v", err)
+		t.Fatalf("parsing amaru_registry.json: %v", err)
 	}
 	if _, ok := idx["skills"]; !ok {
-		t.Error("registry.json missing skills key")
+		t.Error("amaru_registry.json missing skills key")
+	}
+	if _, ok := idx["amaru_version"]; !ok {
+		t.Error("amaru_registry.json missing amaru_version key")
 	}
 
 	// Verify AGENTS.md
@@ -44,7 +47,7 @@ func TestScaffoldRepo(t *testing.T) {
 	}
 
 	// Verify .gitkeep files
-	for _, d := range []string{"skills", "commands", "agents"} {
+	for _, d := range []string{".amaru_registry/skills", ".amaru_registry/commands", ".amaru_registry/agents"} {
 		if _, err := os.Stat(filepath.Join(dir, d, ".gitkeep")); err != nil {
 			t.Errorf("expected .gitkeep in %s", d)
 		}
@@ -60,9 +63,9 @@ func TestScaffoldRepoWithProject(t *testing.T) {
 
 	// Verify project-specific directories
 	for _, d := range []string{
-		"context/myapp/brainstorms",
-		"context/myapp/plans",
-		"context/myapp/solutions",
+		".amaru_registry/context/myapp/brainstorms",
+		".amaru_registry/context/myapp/plans",
+		".amaru_registry/context/myapp/solutions",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, d)); err != nil {
 			t.Errorf("expected directory %s: %v", d, err)
@@ -70,7 +73,7 @@ func TestScaffoldRepoWithProject(t *testing.T) {
 	}
 
 	// Verify project AGENTS.md
-	data, err := os.ReadFile(filepath.Join(dir, "context", "myapp", "AGENTS.md"))
+	data, err := os.ReadFile(filepath.Join(dir, ".amaru_registry", "context", "myapp", "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("reading project AGENTS.md: %v", err)
 	}
@@ -79,11 +82,11 @@ func TestScaffoldRepoWithProject(t *testing.T) {
 	}
 
 	// Verify sparse profile
-	data, err = os.ReadFile(filepath.Join(dir, ".sparse-profiles", "myapp"))
+	data, err = os.ReadFile(filepath.Join(dir, ".amaru_registry", ".sparse-profiles", "myapp"))
 	if err != nil {
 		t.Fatalf("reading sparse profile: %v", err)
 	}
-	if !strings.Contains(string(data), "context/myapp") {
+	if !strings.Contains(string(data), ".amaru_registry/context/myapp") {
 		t.Error("sparse profile should reference project context path")
 	}
 }
@@ -110,8 +113,8 @@ func TestProjectAgentsMD(t *testing.T) {
 
 func TestSparseProfile(t *testing.T) {
 	content := SparseProfile("myapp")
-	if !strings.Contains(content, "context/myapp") {
-		t.Error("expected context/myapp path")
+	if !strings.Contains(content, ".amaru_registry/context/myapp") {
+		t.Error("expected .amaru_registry/context/myapp path")
 	}
 	if !strings.Contains(content, "[include]") {
 		t.Error("expected [include] section")

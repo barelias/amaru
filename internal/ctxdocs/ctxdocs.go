@@ -61,7 +61,7 @@ func (c *Config) RepoURL() (string, error) {
 // SparsePaths returns the paths to include in the sparse checkout for git.
 func (c *Config) SparsePaths() []string {
 	return []string{
-		"context/" + c.Project,
+		".amaru_registry/context/" + c.Project,
 		"AGENTS.md",
 	}
 }
@@ -91,7 +91,7 @@ func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 	}
 
 	// Create symlink from local path to the context project dir in the clone
-	contextSrc := filepath.Join(cloneTarget, "context", cfg.Project)
+	contextSrc := filepath.Join(cloneTarget, ".amaru_registry", "context", cfg.Project)
 	contextDst := filepath.Join(projectDir, cfg.LocalPath)
 
 	if err := os.MkdirAll(filepath.Dir(contextDst), 0755); err != nil {
@@ -134,7 +134,7 @@ func Push(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 		return nil // Nothing to push
 	}
 
-	contextPath := filepath.Join("context", cfg.Project)
+	contextPath := filepath.Join(".amaru_registry", "context", cfg.Project)
 	if err := backend.Add(ctx, cloneDir, []string{contextPath}); err != nil {
 		return fmt.Errorf("staging changes: %w", err)
 	}

@@ -1,0 +1,9 @@
+{
+  "name": "amaru-usage",
+  "type": "skill",
+  "version": "",
+  "description": "Teaches Claude Code how to use amaru to manage skills, commands, and agents",
+  "author": "barelias",
+  "files": ["skill.md"],
+  "tags": ["amaru", "tooling", "meta"]
+}

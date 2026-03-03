@@ -369,38 +369,41 @@ A registry is just a GitHub repo with this layout:
 
 ```
 my-skills-registry/
-├── registry.json              # Auto-generated index (by CI)
-├── AGENTS.md                  # Root navigation + registry structure
-├── .sparse-profiles/          # Sapling sparse checkout profiles
-│   └── my-app
-├── skills/
-│   ├── research/
-│   │   ├── skill.md           # The skill content
-│   │   ├── manifest.json      # Metadata + version
-│   │   └── examples/          # Optional
-│   └── plan/
-│       ├── skill.md
-│       └── manifest.json
-├── commands/
-│   └── dev/
-│       └── bootstrap/
-│           ├── command.md
-│           └── manifest.json
-├── agents/
-│   └── code-reviewer/
-│       ├── agent.md
-│       └── manifest.json
-└── context/
-    └── my-app/
-        ├── AGENTS.md          # Per-project navigation
-        ├── brainstorms/
-        ├── plans/
-        └── solutions/
+├── amaru_registry.json            # Package index (auto-updated by CI)
+├── AGENTS.md                      # Root navigation + registry structure
+└── .amaru_registry/               # All registry content
+    ├── .sparse-profiles/          # Sapling sparse checkout profiles
+    │   └── my-app
+    ├── skills/
+    │   ├── research/
+    │   │   ├── skill.md           # The skill content
+    │   │   ├── manifest.json      # Metadata + version
+    │   │   └── examples/          # Optional
+    │   └── plan/
+    │       ├── skill.md
+    │       └── manifest.json
+    ├── commands/
+    │   └── dev/
+    │       └── bootstrap/
+    │           ├── command.md
+    │           └── manifest.json
+    ├── agents/
+    │   └── code-reviewer/
+    │       ├── agent.md
+    │       └── manifest.json
+    └── context/
+        └── my-app/
+            ├── AGENTS.md          # Per-project navigation
+            ├── brainstorms/
+            ├── plans/
+            └── solutions/
 ```
+
+The `.amaru_registry/` prefix keeps registry content separate from the repo's own source code, making it easy for any tool to double as its own registry.
 
 Versions are tracked via git tags: `skill/research/1.0.3`, `command/dev/bootstrap/2.0.0`, `agent/code-reviewer/1.0.0`.
 
-Skillsets are defined in `registry.json`:
+Skillsets are defined in `amaru_registry.json`:
 
 ```jsonc
 {
@@ -450,6 +453,16 @@ To get automatic update warnings when you start a Claude Code session, add a hoo
 if [ -f "amaru.json" ]; then
   amaru check --quiet 2>/dev/null
 fi
+```
+
+## Self-Hosted Registry
+
+This repo is its own registry — it ships an `amaru-usage` skill that teaches Claude Code how to use amaru. Any tool can do the same: add `amaru_registry.json` and `.amaru_registry/` to your repo.
+
+```bash
+# In any project:
+amaru init                    # Use github:barelias/amaru as the registry URL
+amaru add amaru-usage         # Install the amaru-usage skill
 ```
 
 ## License

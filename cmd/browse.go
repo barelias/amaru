@@ -73,6 +73,21 @@ func runBrowse(ctx context.Context) error {
 				ui.Table(rows)
 			}
 		}
+
+		// Display skillsets
+		if len(idx.Skillsets) > 0 {
+			fmt.Printf("  Skillsets:\n")
+			var rows [][]string
+			for name, ss := range idx.Skillsets {
+				tags := ""
+				if len(ss.Tags) > 0 {
+					tags = "[" + strings.Join(ss.Tags, ", ") + "]"
+				}
+				count := fmt.Sprintf("%d items", len(ss.Items))
+				rows = append(rows, []string{"    " + name, count, tags, ss.Description})
+			}
+			ui.Table(rows)
+		}
 	}
 
 	return nil

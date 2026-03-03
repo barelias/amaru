@@ -165,6 +165,9 @@ func (c *GitHubClient) FetchIndex(ctx context.Context) (*RegistryIndex, error) {
 	if index.Agents == nil {
 		index.Agents = make(map[string]RegistryEntry)
 	}
+	if index.Skillsets == nil {
+		index.Skillsets = make(map[string]SkillsetEntry)
+	}
 	return &index, nil
 }
 

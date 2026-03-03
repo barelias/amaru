@@ -1,10 +1,12 @@
 package manifest
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 
 	"github.com/barelias/amaru/internal/types"
@@ -13,10 +15,11 @@ import (
 const LockFile = "amaru.lock"
 
 type Lock struct {
-	LockedAt string                  `json:"locked_at"`
-	Skills   map[string]LockedEntry  `json:"skills,omitempty"`
-	Commands map[string]LockedEntry  `json:"commands,omitempty"`
-	Agents   map[string]LockedEntry  `json:"agents,omitempty"`
+	LockedAt  string                       `json:"locked_at"`
+	Skills    map[string]LockedEntry       `json:"skills,omitempty"`
+	Commands  map[string]LockedEntry       `json:"commands,omitempty"`
+	Agents    map[string]LockedEntry       `json:"agents,omitempty"`
+	Skillsets map[string]LockedSkillset    `json:"skillsets,omitempty"`
 }
 
 type LockedEntry struct {
@@ -26,6 +29,27 @@ type LockedEntry struct {
 	InstalledAt string `json:"installed_at"`
 }
 
+// LockedSkillset tracks an installed skillset and its member digest.
+type LockedSkillset struct {
+	Registry    string   `json:"registry"`
+	Digest      string   `json:"digest"`       // hash of sorted member type+name+version
+	Members     []string `json:"members"`       // "type/name" list for display
+	InstalledAt string   `json:"installed_at"`
+}
+
+// SkillsetDigest computes a deterministic hash of skillset member versions.
+// Items is a list of "type/name/version" strings.
+func SkillsetDigest(items []string) string {
+	sorted := make([]string, len(items))
+	copy(sorted, items)
+	sort.Strings(sorted)
+	h := sha256.New()
+	for _, item := range sorted {
+		h.Write([]byte(item + "\n"))
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:12]
+}
+
 // LoadLock reads and parses amaru.lock from the given directory.
 func LoadLock(dir string) (*Lock, error) {
 	path := filepath.Join(dir, LockFile)
@@ -33,9 +57,10 @@ func LoadLock(dir string) (*Lock, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Lock{
-				Skills:   make(map[string]LockedEntry),
-				Commands: make(map[string]LockedEntry),
-				Agents:   make(map[string]LockedEntry),
+				Skills:    make(map[string]LockedEntry),
+				Commands:  make(map[string]LockedEntry),
+				Agents:    make(map[string]LockedEntry),
+				Skillsets: make(map[string]LockedSkillset),
 			}, nil
 		}
 		return nil, fmt.Errorf("reading %s: %w", LockFile, err)
@@ -53,6 +78,9 @@ func LoadLock(dir string) (*Lock, error) {
 	}
 	if l.Agents == nil {
 		l.Agents = make(map[string]LockedEntry)
+	}
+	if l.Skillsets == nil {
+		l.Skillsets = make(map[string]LockedSkillset)
 	}
 	return &l, nil
 }

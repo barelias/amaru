@@ -64,6 +64,56 @@ func TestDependencySpecMarshalFullForm(t *testing.T) {
 	}
 }
 
+func TestDependencySpecWithGroup(t *testing.T) {
+	// Full form with group should marshal as object
+	spec := DependencySpec{Version: "^1.0.0", Group: "starter-pack"}
+	data, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should be an object, not a string
+	var result map[string]string
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("expected object form for spec with group, got: %s", string(data))
+	}
+	if result["version"] != "^1.0.0" {
+		t.Errorf("expected version ^1.0.0, got %s", result["version"])
+	}
+	if result["group"] != "starter-pack" {
+		t.Errorf("expected group starter-pack, got %s", result["group"])
+	}
+
+	// Round-trip: unmarshal the full form back
+	var loaded DependencySpec
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loaded.Group != "starter-pack" {
+		t.Errorf("expected group starter-pack after round-trip, got %s", loaded.Group)
+	}
+}
+
+func TestDependencySpecLatestVersion(t *testing.T) {
+	// "latest" version with no registry or group should marshal as shorthand
+	spec := DependencySpec{Version: "latest"}
+	data, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(data) != `"latest"` {
+		t.Errorf("expected shorthand \"latest\", got %s", string(data))
+	}
+
+	// Round-trip
+	var loaded DependencySpec
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if loaded.Version != "latest" {
+		t.Errorf("expected version latest, got %s", loaded.Version)
+	}
+}
+
 func TestManifestLoadShorthand(t *testing.T) {
 	dir := t.TempDir()
 	content := `{

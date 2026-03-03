@@ -20,6 +20,9 @@ func TestLoadLockNotExist(t *testing.T) {
 	if len(lock.Skills) != 0 || len(lock.Commands) != 0 {
 		t.Error("expected empty maps for missing lock file")
 	}
+	if len(lock.Skillsets) != 0 {
+		t.Error("expected empty skillsets map for missing lock file")
+	}
 }
 
 func TestEntriesForType(t *testing.T) {
@@ -91,6 +94,14 @@ func TestSaveAndLoadLock(t *testing.T) {
 				InstalledAt: "2026-02-26T09:00:00Z",
 			},
 		},
+		Skillsets: map[string]LockedSkillset{
+			"starter-pack": {
+				Registry:    "main",
+				Digest:      "abc123def456",
+				Members:     []string{"skill/research", "command/bootstrap"},
+				InstalledAt: "2026-02-27T08:00:00Z",
+			},
+		},
 	}
 
 	if err := SaveLock(dir, lock); err != nil {
@@ -117,5 +128,54 @@ func TestSaveAndLoadLock(t *testing.T) {
 	}
 	if loaded.LockedAt == "" {
 		t.Error("expected locked_at to be set")
+	}
+
+	// Verify skillset was persisted
+	ss, ok := loaded.Skillsets["starter-pack"]
+	if !ok {
+		t.Fatal("expected skillset starter-pack in loaded lock")
+	}
+	if ss.Registry != "main" {
+		t.Errorf("expected registry main, got %s", ss.Registry)
+	}
+	if ss.Digest != "abc123def456" {
+		t.Errorf("expected digest abc123def456, got %s", ss.Digest)
+	}
+	if len(ss.Members) != 2 {
+		t.Errorf("expected 2 members, got %d", len(ss.Members))
+	}
+}
+
+func TestSkillsetDigest(t *testing.T) {
+	// Deterministic: same items, same digest
+	items1 := []string{"skill/research/1.0.0", "command/bootstrap/2.0.0"}
+	items2 := []string{"skill/research/1.0.0", "command/bootstrap/2.0.0"}
+	if SkillsetDigest(items1) != SkillsetDigest(items2) {
+		t.Error("expected same digest for same items")
+	}
+
+	// Order-independent: sorted internally
+	items3 := []string{"command/bootstrap/2.0.0", "skill/research/1.0.0"}
+	if SkillsetDigest(items1) != SkillsetDigest(items3) {
+		t.Error("expected same digest regardless of order")
+	}
+
+	// Different items, different digest
+	items4 := []string{"skill/research/1.1.0", "command/bootstrap/2.0.0"}
+	if SkillsetDigest(items1) == SkillsetDigest(items4) {
+		t.Error("expected different digest for different versions")
+	}
+
+	// Empty items
+	empty := SkillsetDigest(nil)
+	if empty == "" {
+		t.Error("expected non-empty digest even for empty items")
+	}
+
+	// Does not modify input slice
+	original := []string{"b", "a"}
+	_ = SkillsetDigest(original)
+	if original[0] != "b" || original[1] != "a" {
+		t.Error("SkillsetDigest should not modify input slice")
 	}
 }

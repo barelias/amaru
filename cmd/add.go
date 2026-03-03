@@ -3,9 +3,11 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/barelias/amaru/internal/installer"
 	"github.com/barelias/amaru/internal/manifest"
+	"github.com/barelias/amaru/internal/registry"
 	"github.com/barelias/amaru/internal/types"
 	"github.com/barelias/amaru/internal/ui"
 
@@ -20,8 +22,8 @@ var (
 
 var addCmd = &cobra.Command{
 	Use:   "add <name>",
-	Short: "Adiciona uma skill/command/agent ao manifesto e instala",
-	Long:  "Adiciona uma skill/command/agent ao manifesto (amaru.json) e instala os arquivos.",
+	Short: "Adiciona uma skill/command/agent/skillset ao manifesto e instala",
+	Long:  "Adiciona uma skill/command/agent ao manifesto (amaru.json) e instala os arquivos.\nPara skillsets, expande os membros em itens individuais.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAdd(cmd.Context(), args[0])
@@ -29,7 +31,7 @@ var addCmd = &cobra.Command{
 }
 
 func init() {
-	addCmd.Flags().StringVar(&addType, "type", "skill", "Item type: skill, command, or agent")
+	addCmd.Flags().StringVar(&addType, "type", "skill", "Item type: skill, command, agent, or skillset")
 	addCmd.Flags().BoolVar(&addIsCommand, "command", false, "Shorthand for --type=command")
 	addCmd.Flags().StringVar(&addRegistry, "registry", "", "Registry alias (obrigatório se múltiplos registries)")
 	rootCmd.AddCommand(addCmd)
@@ -68,14 +70,7 @@ func runAdd(ctx context.Context, name string) error {
 		return fmt.Errorf("registry %q not found in manifest", regAlias)
 	}
 
-	// Check if already in manifest
-	if deps := m.DepsForType(itemType); deps != nil {
-		if _, exists := deps[name]; exists {
-			return fmt.Errorf("%s %q already in manifest", itemType, name)
-		}
-	}
-
-	// Fetch registry to get latest version
+	// Fetch registry index
 	clients, err := buildClients(ctx, m, true)
 	if err != nil {
 		return err
@@ -87,10 +82,27 @@ func runAdd(ctx context.Context, name string) error {
 		return fmt.Errorf("fetching registry index: %w", err)
 	}
 
+	// Handle skillset type: expand to individual items
+	if addType == "skillset" {
+		return runAddSkillset(ctx, name, regAlias, m, lock, client, idx)
+	}
+
+	// Regular add for skill/command/agent
 	entries := idx.EntriesForType(itemType)
 	entry, found := entries[name]
 	if !found {
+		// Check if the name exists as a skillset and suggest it
+		if _, isSkillset := idx.Skillsets[name]; isSkillset {
+			return fmt.Errorf("%s %q not found in registry %q. Did you mean: amaru add %s --type=skillset", itemType, name, regAlias, name)
+		}
 		return fmt.Errorf("%s %q not found in registry %q", itemType, name, regAlias)
+	}
+
+	// Check if already in manifest
+	if deps := m.DepsForType(itemType); deps != nil {
+		if _, exists := deps[name]; exists {
+			return fmt.Errorf("%s %q already in manifest", itemType, name)
+		}
 	}
 
 	// Add to manifest with ^latest constraint (or "latest" for unversioned items)
@@ -140,6 +152,140 @@ func runAdd(ctx context.Context, name string) error {
 	}
 	ui.Check("Added %s %s@%s from [%s]", itemType, name, displayVersion, regAlias)
 	fmt.Printf("  %s\n", entry.Description)
+
+	return nil
+}
+
+func runAddSkillset(ctx context.Context, name, regAlias string, m *manifest.Manifest, lock *manifest.Lock, client registry.Client, idx *registry.RegistryIndex) error {
+	skillset, found := idx.Skillsets[name]
+	if !found {
+		return fmt.Errorf("skillset %q not found in registry %q", name, regAlias)
+	}
+
+	if len(skillset.Items) == 0 {
+		return fmt.Errorf("skillset %q has no items", name)
+	}
+
+	// Validate all member types (reject nested skillsets)
+	for _, item := range skillset.Items {
+		if item.Type == "skillset" {
+			return fmt.Errorf("skillset %q: nested skillsets are not supported (member %q has type \"skillset\")", name, item.Name)
+		}
+		itemType := types.ItemType(item.Type)
+		if itemType != types.Skill && itemType != types.Command && itemType != types.Agent {
+			return fmt.Errorf("skillset %q: member %q has invalid type %q", name, item.Name, item.Type)
+		}
+	}
+
+	// Pre-validate: check all members exist in the registry
+	var missing []string
+	for _, item := range skillset.Items {
+		itemType := types.ItemType(item.Type)
+		entries := idx.EntriesForType(itemType)
+		if _, ok := entries[item.Name]; !ok {
+			missing = append(missing, fmt.Sprintf("%s %q", item.Type, item.Name))
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("skillset %q: members not found in registry: %s", name, strings.Join(missing, ", "))
+	}
+
+	fmt.Printf("Installing skillset %q (%d items)...\n", name, len(skillset.Items))
+
+	added := 0
+	skipped := 0
+	for _, item := range skillset.Items {
+		itemType := types.ItemType(item.Type)
+
+		// Skip if already in manifest
+		if deps := m.DepsForType(itemType); deps != nil {
+			if _, exists := deps[item.Name]; exists {
+				ui.Warn("%s %q already in manifest, skipping", item.Type, item.Name)
+				skipped++
+				continue
+			}
+		}
+
+		// Look up entry to get version
+		entries := idx.EntriesForType(itemType)
+		entry := entries[item.Name]
+
+		version := entry.Latest
+		spec := manifest.DependencySpec{
+			Group: name,
+		}
+		if version != "" {
+			spec.Version = "^" + version
+		} else {
+			spec.Version = "latest"
+		}
+		if len(m.Registries) > 1 {
+			spec.Registry = regAlias
+		}
+
+		m.SetDep(itemType, item.Name, spec)
+
+		// Download and install
+		files, err := client.DownloadFiles(ctx, item.Type, item.Name, version)
+		if err != nil {
+			return fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
+		}
+
+		hash, err := installer.Install(".", item.Type, item.Name, files)
+		if err != nil {
+			return fmt.Errorf("installing %s %q: %w", item.Type, item.Name, err)
+		}
+
+		lockVersion := version
+		if lockVersion == "" {
+			lockVersion = "latest"
+		}
+		lock.EntriesForType(itemType)[item.Name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
+
+		displayVersion := version
+		if displayVersion == "" {
+			displayVersion = "latest"
+		}
+		ui.Check("  %s %s@%s", item.Type, item.Name, displayVersion)
+		added++
+	}
+
+	// Compute skillset digest from member versions
+	var digestItems []string
+	var memberList []string
+	for _, item := range skillset.Items {
+		itemType := types.ItemType(item.Type)
+		lockEntries := lock.EntriesForType(itemType)
+		if le, ok := lockEntries[item.Name]; ok {
+			digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s", item.Type, item.Name, le.Version))
+		}
+		memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+	}
+
+	// Record skillset in lock for change detection
+	lock.Skillsets[name] = manifest.LockedSkillset{
+		Registry:    regAlias,
+		Digest:      manifest.SkillsetDigest(digestItems),
+		Members:     memberList,
+		InstalledAt: "",
+	}
+
+	// Save manifest and lock
+	if err := manifest.Save(".", m); err != nil {
+		return fmt.Errorf("saving manifest: %w", err)
+	}
+	if err := manifest.SaveLock(".", lock); err != nil {
+		return fmt.Errorf("saving lock: %w", err)
+	}
+
+	fmt.Printf("\nSkillset %q: %d added", name, added)
+	if skipped > 0 {
+		fmt.Printf(", %d skipped (already installed)", skipped)
+	}
+	fmt.Println()
+	if skillset.Description != "" {
+		fmt.Printf("  %s\n", skillset.Description)
+	}
 
 	return nil
 }

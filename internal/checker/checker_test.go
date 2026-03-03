@@ -213,6 +213,98 @@ func TestCheckMissingClient(t *testing.T) {
 	}
 }
 
+func TestCheckLatestConstraintSkipsSemver(t *testing.T) {
+	m := &manifest.Manifest{
+		Version: "1.0.0",
+		Registries: map[string]manifest.RegistryConfig{
+			"main": {URL: "github:acme/skills", Auth: "none"},
+		},
+		Skills: map[string]manifest.DependencySpec{
+			"unversioned": {Version: "latest"},
+		},
+	}
+
+	lock := &manifest.Lock{
+		Skills: map[string]manifest.LockedEntry{
+			"unversioned": {Version: "latest", Registry: "main", Hash: "abc123"},
+		},
+		Commands:  map[string]manifest.LockedEntry{},
+		Agents:    map[string]manifest.LockedEntry{},
+		Skillsets: map[string]manifest.LockedSkillset{},
+	}
+
+	// Client doesn't need versions for "latest" items
+	client := &mockRegistryClient{
+		versions: map[string][]*semver.Version{},
+	}
+
+	clients := map[string]registry.Client{"main": client}
+
+	result, err := Check(context.Background(), t.TempDir(), m, lock, clients)
+	if err != nil {
+		t.Fatalf("Check error: %v", err)
+	}
+	if len(result.Updates) != 0 {
+		t.Errorf("expected 0 updates for latest constraint, got %d", len(result.Updates))
+	}
+	if result.UpToDate != 1 {
+		t.Errorf("expected 1 up-to-date, got %d", result.UpToDate)
+	}
+}
+
+func TestCheckLatestConstraintDetectsDrift(t *testing.T) {
+	dir := t.TempDir()
+
+	// Install a skill so it exists on disk
+	files := []registry.File{
+		{Path: "skill.md", Content: []byte("# Original content")},
+	}
+	hash, err := installer.Install(dir, "skill", "unversioned", files)
+	if err != nil {
+		t.Fatalf("Install error: %v", err)
+	}
+
+	// Now modify the file locally to create drift
+	skillFile := filepath.Join(dir, installer.SkillsDir, "unversioned", "skill.md")
+	os.WriteFile(skillFile, []byte("# Modified locally"), 0644)
+
+	m := &manifest.Manifest{
+		Version: "1.0.0",
+		Registries: map[string]manifest.RegistryConfig{
+			"main": {URL: "github:acme/skills", Auth: "none"},
+		},
+		Skills: map[string]manifest.DependencySpec{
+			"unversioned": {Version: "latest"},
+		},
+	}
+
+	lock := &manifest.Lock{
+		Skills: map[string]manifest.LockedEntry{
+			"unversioned": {Version: "latest", Registry: "main", Hash: hash},
+		},
+		Commands:  map[string]manifest.LockedEntry{},
+		Agents:    map[string]manifest.LockedEntry{},
+		Skillsets: map[string]manifest.LockedSkillset{},
+	}
+
+	client := &mockRegistryClient{
+		versions: map[string][]*semver.Version{},
+	}
+
+	clients := map[string]registry.Client{"main": client}
+
+	result, err := Check(context.Background(), dir, m, lock, clients)
+	if err != nil {
+		t.Fatalf("Check error: %v", err)
+	}
+	if len(result.Drifts) != 1 {
+		t.Fatalf("expected 1 drift for latest constraint, got %d", len(result.Drifts))
+	}
+	if result.Drifts[0].Version != "latest" {
+		t.Errorf("expected version latest in drift, got %s", result.Drifts[0].Version)
+	}
+}
+
 func TestCheckSkipsUnlockedDeps(t *testing.T) {
 	m := &manifest.Manifest{
 		Version: "1.0.0",

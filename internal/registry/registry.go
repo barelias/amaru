@@ -9,10 +9,11 @@ import (
 
 // RegistryIndex is the parsed registry.json from the remote registry.
 type RegistryIndex struct {
-	UpdatedAt string                    `json:"updated_at"`
-	Skills    map[string]RegistryEntry  `json:"skills,omitempty"`
-	Commands  map[string]RegistryEntry  `json:"commands,omitempty"`
-	Agents    map[string]RegistryEntry  `json:"agents,omitempty"`
+	UpdatedAt string                      `json:"updated_at"`
+	Skills    map[string]RegistryEntry    `json:"skills,omitempty"`
+	Commands  map[string]RegistryEntry    `json:"commands,omitempty"`
+	Agents    map[string]RegistryEntry    `json:"agents,omitempty"`
+	Skillsets map[string]SkillsetEntry    `json:"skillsets,omitempty"`
 }
 
 // EntriesForType returns the registry entries for a given item type.
@@ -34,6 +35,20 @@ type RegistryEntry struct {
 	Latest      string   `json:"latest"`
 	Tags        []string `json:"tags,omitempty"`
 	Description string   `json:"description"`
+}
+
+// SkillsetEntry is a named group of skills/commands/agents in the registry index.
+// Skillsets expand to individual items on install (VS Code Extension Pack pattern).
+type SkillsetEntry struct {
+	Description string         `json:"description"`
+	Tags        []string       `json:"tags,omitempty"`
+	Items       []SkillsetItem `json:"items"`
+}
+
+// SkillsetItem is one member of a skillset.
+type SkillsetItem struct {
+	Type string `json:"type"` // "skill", "command", or "agent"
+	Name string `json:"name"`
 }
 
 // ItemManifest is the manifest.json inside a skill/command directory in the registry.

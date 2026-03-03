@@ -75,6 +75,25 @@ func Check(ctx context.Context, projectDir string, m *manifest.Manifest, lock *m
 }
 
 func checkItem(ctx context.Context, result *CheckResult, itemType, name, regAlias, constraint string, locked manifest.LockedEntry, client registry.Client, projectDir string, ignored bool) error {
+	// For "latest" items, skip version comparison — only check local drift
+	if constraint == "latest" {
+		if !ignored && installer.IsInstalled(projectDir, itemType, name) {
+			localHash, err := installer.ComputeHash(installedPath(projectDir, itemType, name))
+			if err == nil && localHash != locked.Hash {
+				result.Drifts = append(result.Drifts, DriftInfo{
+					Name:       name,
+					ItemType:   itemType,
+					Registry:   regAlias,
+					Version:    "latest",
+					LocalHash:  localHash,
+					RemoteHash: locked.Hash,
+				})
+			}
+		}
+		result.UpToDate++
+		return nil
+	}
+
 	// Check for version updates
 	versions, err := client.ListVersions(ctx, itemType, name)
 	if err != nil {

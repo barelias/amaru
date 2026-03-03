@@ -82,19 +82,23 @@ func installItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock,
 	if !installForce {
 		if locked, ok := lockEntries[name]; ok {
 			if installer.IsInstalled(".", itemType, name) {
-				ui.Check("%s@%s (%s) — already installed", name, locked.Version, regAlias)
+				displayVersion := locked.Version
+				if displayVersion == "" {
+					displayVersion = "latest"
+				}
+				ui.Check("%s@%s (%s) — already installed", name, displayVersion, regAlias)
 				return nil
 			}
 		}
 	}
 
-	// Resolve version
+	// Resolve version (returns "" for "latest" constraint)
 	resolved, err := resolveVersion(ctx, client, itemType, name, spec.Version)
 	if err != nil {
 		return err
 	}
 
-	// Download files
+	// Download files (empty version downloads from default branch)
 	files, err := client.DownloadFiles(ctx, itemType, name, resolved)
 	if err != nil {
 		return fmt.Errorf("downloading: %w", err)
@@ -107,13 +111,26 @@ func installItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock,
 	}
 
 	// Update lock
-	lockEntries[name] = manifest.NewLockedEntry(resolved, regAlias, hash)
+	lockVersion := resolved
+	if lockVersion == "" {
+		lockVersion = "latest"
+	}
+	lockEntries[name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
 
-	ui.Check("%s@%s (%s)", name, resolved, regAlias)
+	displayVersion := resolved
+	if displayVersion == "" {
+		displayVersion = "latest"
+	}
+	ui.Check("%s@%s (%s)", name, displayVersion, regAlias)
 	return nil
 }
 
 func resolveVersion(ctx context.Context, client registry.Client, itemType, name, constraint string) (string, error) {
+	// "latest" means unversioned — download from default branch
+	if constraint == "latest" {
+		return "", nil
+	}
+
 	versions, err := client.ListVersions(ctx, itemType, name)
 	if err != nil {
 		return "", fmt.Errorf("listing versions: %w", err)

@@ -99,6 +99,26 @@ func updateItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock, 
 		return false, nil // Not installed
 	}
 
+	// For "latest" items, re-download from default branch and compare hash
+	if spec.Version == "latest" {
+		files, err := client.DownloadFiles(ctx, itemType, name, "")
+		if err != nil {
+			return false, fmt.Errorf("downloading: %w", err)
+		}
+
+		hash, err := installer.Install(".", itemType, name, files)
+		if err != nil {
+			return false, fmt.Errorf("installing: %w", err)
+		}
+
+		if hash != locked.Hash {
+			lockEntries[name] = manifest.NewLockedEntry("latest", regAlias, hash)
+			ui.Check("Updating %s@latest — content changed [%s]", name, regAlias)
+			return true, nil
+		}
+		return false, nil
+	}
+
 	versions, err := client.ListVersions(ctx, itemType, name)
 	if err != nil {
 		return false, fmt.Errorf("listing versions: %w", err)

@@ -93,9 +93,13 @@ func runAdd(ctx context.Context, name string) error {
 		return fmt.Errorf("%s %q not found in registry %q", itemType, name, regAlias)
 	}
 
-	// Add to manifest with ^latest constraint
-	spec := manifest.DependencySpec{
-		Version: "^" + entry.Latest,
+	// Add to manifest with ^latest constraint (or "latest" for unversioned items)
+	version := entry.Latest
+	spec := manifest.DependencySpec{}
+	if version != "" {
+		spec.Version = "^" + version
+	} else {
+		spec.Version = "latest"
 	}
 	if len(m.Registries) > 1 {
 		spec.Registry = regAlias
@@ -108,8 +112,8 @@ func runAdd(ctx context.Context, name string) error {
 		return fmt.Errorf("saving manifest: %w", err)
 	}
 
-	// Download and install
-	files, err := client.DownloadFiles(ctx, string(itemType), name, entry.Latest)
+	// Download and install (empty version downloads from default branch)
+	files, err := client.DownloadFiles(ctx, string(itemType), name, version)
 	if err != nil {
 		return fmt.Errorf("downloading: %w", err)
 	}
@@ -119,14 +123,22 @@ func runAdd(ctx context.Context, name string) error {
 		return fmt.Errorf("installing: %w", err)
 	}
 
-	// Update lock
-	lock.EntriesForType(itemType)[name] = manifest.NewLockedEntry(entry.Latest, regAlias, hash)
+	// Update lock (store "latest" for unversioned items)
+	lockVersion := version
+	if lockVersion == "" {
+		lockVersion = "latest"
+	}
+	lock.EntriesForType(itemType)[name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
 
 	if err := manifest.SaveLock(".", lock); err != nil {
 		return fmt.Errorf("saving lock: %w", err)
 	}
 
-	ui.Check("Added %s %s@%s from [%s]", itemType, name, entry.Latest, regAlias)
+	displayVersion := version
+	if displayVersion == "" {
+		displayVersion = "latest"
+	}
+	ui.Check("Added %s %s@%s from [%s]", itemType, name, displayVersion, regAlias)
 	fmt.Printf("  %s\n", entry.Description)
 
 	return nil

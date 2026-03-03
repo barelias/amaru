@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/barelias/amaru/internal/manifest"
+	"github.com/barelias/amaru/internal/registry"
 
 	"github.com/spf13/cobra"
 )
@@ -42,10 +43,20 @@ func runInit() error {
 	for {
 		// Registry URL
 		fmt.Print("Registry URL (ex: github:org/skills-repo): ")
-		url, _ := reader.ReadString('\n')
-		url = strings.TrimSpace(url)
-		if url == "" {
+		rawURL, _ := reader.ReadString('\n')
+		rawURL = strings.TrimSpace(rawURL)
+		if rawURL == "" {
 			return fmt.Errorf("registry URL is required")
+		}
+
+		// Normalize URL to canonical github:org/repo format
+		url, err := registry.NormalizeURL(rawURL)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			continue
+		}
+		if url != rawURL {
+			fmt.Printf("  → normalized to: %s\n", url)
 		}
 
 		// Registry alias (suggest from URL)

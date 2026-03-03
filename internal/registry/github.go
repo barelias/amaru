@@ -34,25 +34,79 @@ func NewGitHubClient(url string, auth Authenticator) (*GitHubClient, error) {
 	}, nil
 }
 
-// parseGitHubURL parses "github:org/repo" or "https://github.com/org/repo" into owner and repo.
-func parseGitHubURL(url string) (string, string, error) {
-	if strings.HasPrefix(url, "github:") {
-		parts := strings.SplitN(strings.TrimPrefix(url, "github:"), "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("invalid github URL format: %s (expected github:org/repo)", url)
-		}
-		return parts[0], parts[1], nil
+// parseGitHubURL parses various GitHub URL formats into owner and repo.
+// Supported formats:
+//   - github:org/repo (canonical shorthand)
+//   - https://github.com/org/repo[.git]
+//   - http://github.com/org/repo[.git] (auto-upgraded to HTTPS)
+//   - git@github.com:org/repo[.git] (SSH colon syntax)
+//   - ssh://git@github.com/org/repo[.git] (SSH URL syntax)
+//   - github.com/org/repo[.git] (bare domain)
+func parseGitHubURL(rawURL string) (string, string, error) {
+	lower := strings.ToLower(rawURL)
+
+	// Canonical shorthand: github:org/repo
+	if strings.HasPrefix(lower, "github:") {
+		return extractOwnerRepo(rawURL[len("github:"):], rawURL)
 	}
-	if strings.HasPrefix(url, "https://github.com/") {
-		trimmed := strings.TrimPrefix(url, "https://github.com/")
-		trimmed = strings.TrimSuffix(trimmed, ".git")
-		parts := strings.SplitN(trimmed, "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("invalid github URL format: %s", url)
-		}
-		return parts[0], parts[1], nil
+
+	// SSH colon syntax: git@github.com:org/repo[.git]
+	if strings.HasPrefix(lower, "git@github.com:") {
+		return extractOwnerRepo(rawURL[len("git@github.com:"):], rawURL)
 	}
-	return "", "", fmt.Errorf("unsupported URL format: %s (expected github:org/repo or https://github.com/org/repo)", url)
+
+	// SSH URL syntax: ssh://git@github.com/org/repo[.git]
+	if strings.HasPrefix(lower, "ssh://git@github.com/") {
+		return extractOwnerRepo(rawURL[len("ssh://git@github.com/"):], rawURL)
+	}
+
+	// HTTP: auto-upgrade to HTTPS (fall through)
+	if strings.HasPrefix(lower, "http://github.com/") {
+		rawURL = "https://github.com/" + rawURL[len("http://github.com/"):]
+		lower = strings.ToLower(rawURL)
+	}
+
+	// Bare domain: github.com/org/repo (fall through to HTTPS)
+	if strings.HasPrefix(lower, "github.com/") {
+		rawURL = "https://" + rawURL
+		lower = strings.ToLower(rawURL)
+	}
+
+	// HTTPS: https://github.com/org/repo[.git]
+	if strings.HasPrefix(lower, "https://github.com/") {
+		return extractOwnerRepo(rawURL[len("https://github.com/"):], rawURL)
+	}
+
+	// Non-GitHub SSH hosts
+	if strings.HasPrefix(lower, "git@") || strings.HasPrefix(lower, "ssh://") {
+		return "", "", fmt.Errorf("unsupported URL format: %s (only GitHub URLs are supported)", rawURL)
+	}
+
+	return "", "", fmt.Errorf("unsupported URL format: %s (expected github:org/repo or https://github.com/org/repo)", rawURL)
+}
+
+// extractOwnerRepo extracts owner and repo from a "org/repo[.git]" path fragment.
+// Rejects URLs with extra path segments (e.g., org/repo/tree/main).
+func extractOwnerRepo(path, originalURL string) (string, string, error) {
+	path = strings.TrimSuffix(path, ".git")
+	path = strings.TrimRight(path, "/")
+	parts := strings.SplitN(path, "/", 3)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("invalid github URL: %s (expected org/repo)", originalURL)
+	}
+	if len(parts) == 3 {
+		return "", "", fmt.Errorf("invalid github URL: %s (unexpected path segments after org/repo)", originalURL)
+	}
+	return parts[0], parts[1], nil
+}
+
+// NormalizeURL converts any accepted GitHub URL format to the canonical "github:org/repo" form.
+func NormalizeURL(url string) (string, error) {
+	owner, repo, err := parseGitHubURL(url)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("github:%s/%s", owner, repo), nil
 }
 
 func (c *GitHubClient) apiRequest(ctx context.Context, path string) ([]byte, error) {
@@ -150,13 +204,17 @@ func (c *GitHubClient) ListVersions(ctx context.Context, itemType, name string) 
 }
 
 // DownloadFiles downloads all files for a specific version.
+// If version is empty, downloads from the default branch.
 func (c *GitHubClient) DownloadFiles(ctx context.Context, itemType, name, version string) ([]File, error) {
-	tag := fmt.Sprintf("%s/%s/%s", itemType, name, version)
+	ref := ""
+	if version != "" {
+		ref = fmt.Sprintf("%s/%s/%s", itemType, name, version)
+	}
 
 	// Determine the directory path in the repo
 	dirPath := types.ItemType(itemType).DirName() + "/" + name
 
-	return c.downloadDirectory(ctx, dirPath, tag, "")
+	return c.downloadDirectory(ctx, dirPath, ref, "")
 }
 
 // downloadDirectory recursively downloads all files in a directory at a given ref.

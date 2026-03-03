@@ -13,33 +13,42 @@ func TestParseGitHubURL(t *testing.T) {
 		wantRepo  string
 		wantErr   bool
 	}{
-		{
-			url:       "github:acme-org/acme-skills",
-			wantOwner: "acme-org",
-			wantRepo:  "acme-skills",
-		},
-		{
-			url:       "https://github.com/acme-org/platform-skills",
-			wantOwner: "acme-org",
-			wantRepo:  "platform-skills",
-		},
-		{
-			url:       "https://github.com/acme-org/platform-skills.git",
-			wantOwner: "acme-org",
-			wantRepo:  "platform-skills",
-		},
-		{
-			url:     "github:invalid",
-			wantErr: true,
-		},
-		{
-			url:     "gitlab:org/repo",
-			wantErr: true,
-		},
-		{
-			url:     "github:/repo",
-			wantErr: true,
-		},
+		// Canonical shorthand
+		{url: "github:acme-org/acme-skills", wantOwner: "acme-org", wantRepo: "acme-skills"},
+		// HTTPS
+		{url: "https://github.com/acme-org/platform-skills", wantOwner: "acme-org", wantRepo: "platform-skills"},
+		{url: "https://github.com/acme-org/platform-skills.git", wantOwner: "acme-org", wantRepo: "platform-skills"},
+		// SSH colon syntax
+		{url: "git@github.com:Visio-ai/ai_registry.git", wantOwner: "Visio-ai", wantRepo: "ai_registry"},
+		{url: "git@github.com:org/repo", wantOwner: "org", wantRepo: "repo"},
+		// SSH URL syntax
+		{url: "ssh://git@github.com/org/repo.git", wantOwner: "org", wantRepo: "repo"},
+		{url: "ssh://git@github.com/org/repo", wantOwner: "org", wantRepo: "repo"},
+		// HTTP auto-upgrade
+		{url: "http://github.com/org/repo", wantOwner: "org", wantRepo: "repo"},
+		{url: "http://github.com/org/repo.git", wantOwner: "org", wantRepo: "repo"},
+		// Bare domain
+		{url: "github.com/org/repo", wantOwner: "org", wantRepo: "repo"},
+		{url: "github.com/org/repo.git", wantOwner: "org", wantRepo: "repo"},
+		// Case insensitive prefixes
+		{url: "Git@GitHub.com:org/repo.git", wantOwner: "org", wantRepo: "repo"},
+		{url: "HTTPS://GITHUB.COM/org/repo", wantOwner: "org", wantRepo: "repo"},
+		// Trailing slashes
+		{url: "github:org/repo/", wantOwner: "org", wantRepo: "repo"},
+		{url: "git@github.com:org/repo/", wantOwner: "org", wantRepo: "repo"},
+		// Errors: invalid formats
+		{url: "github:invalid", wantErr: true},
+		{url: "github:/repo", wantErr: true},
+		// Errors: non-GitHub hosts
+		{url: "gitlab:org/repo", wantErr: true},
+		{url: "git@gitlab.com:org/repo.git", wantErr: true},
+		{url: "ssh://git@bitbucket.org/org/repo", wantErr: true},
+		// Errors: extra path segments
+		{url: "https://github.com/org/repo/tree/main", wantErr: true},
+		{url: "git@github.com:org/repo/extra.git", wantErr: true},
+		// Errors: empty parts
+		{url: "git@github.com:/repo.git", wantErr: true},
+		{url: "git@github.com:org/.git", wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -56,6 +65,35 @@ func TestParseGitHubURL(t *testing.T) {
 				if repo != tt.wantRepo {
 					t.Errorf("repo = %s, want %s", repo, tt.wantRepo)
 				}
+			}
+		})
+	}
+}
+
+func TestNormalizeURL(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{input: "github:org/repo", want: "github:org/repo"},
+		{input: "git@github.com:org/repo.git", want: "github:org/repo"},
+		{input: "ssh://git@github.com/org/repo.git", want: "github:org/repo"},
+		{input: "https://github.com/org/repo.git", want: "github:org/repo"},
+		{input: "http://github.com/org/repo", want: "github:org/repo"},
+		{input: "github.com/org/repo", want: "github:org/repo"},
+		{input: "git@gitlab.com:org/repo.git", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := NormalizeURL(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("NormalizeURL(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("NormalizeURL(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

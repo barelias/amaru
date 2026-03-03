@@ -37,6 +37,7 @@ type RegistryConfig struct {
 type DependencySpec struct {
 	Version  string `json:"version"`
 	Registry string `json:"registry,omitempty"`
+	Group    string `json:"group,omitempty"`
 }
 
 func (d *DependencySpec) UnmarshalJSON(data []byte) error {
@@ -59,7 +60,7 @@ func (d *DependencySpec) UnmarshalJSON(data []byte) error {
 }
 
 func (d DependencySpec) MarshalJSON() ([]byte, error) {
-	if d.Registry == "" {
+	if d.Registry == "" && d.Group == "" {
 		return json.Marshal(d.Version)
 	}
 	type alias DependencySpec

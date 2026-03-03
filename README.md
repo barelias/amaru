@@ -36,6 +36,9 @@ amaru add research
 amaru add dev/bootstrap --type command
 amaru add code-reviewer --type agent
 
+# 3b. Or add a whole skillset at once
+amaru add starter-pack --type skillset
+
 # 4. Install everything
 amaru install
 
@@ -52,8 +55,8 @@ amaru manages two files at the root of your project:
 
 | File | Purpose | Committed? |
 |---|---|---|
-| `amaru.json` | Manifest — declares registries, skills, commands, agents, and context config | Yes |
-| `amaru.lock` | Lock — resolved versions, hashes, timestamps for reproducibility | Yes |
+| `amaru.json` | Manifest — declares registries, skills, commands, agents, skillsets, and context config | Yes |
+| `amaru.lock` | Lock — resolved versions, hashes, skillset digests, timestamps for reproducibility | Yes |
 
 Skills are installed to `.claude/skills/`, commands to `.claude/commands/`, and agents to `.claude/agents/`, matching the Claude Code convention.
 
@@ -119,13 +122,16 @@ Interactive setup — creates `amaru.json` with your registries configured.
 
 ```
 $ amaru init
-Registry URL (ex: github:org/skills-repo): github:acme-org/acme-skills
+Registry URL (ex: github:org/skills-repo): git@github.com:acme-org/acme-skills.git
+  → normalized to: github:acme-org/acme-skills
 Registry alias [acme]: acme
 Auth method (github/token/none) [github]: github
 Adicionar outro registry? (y/N): N
 
 amaru.json criado. Rode `amaru browse` para ver skills disponíveis.
 ```
+
+Accepts any GitHub URL format — SSH (`git@github.com:org/repo.git`), HTTPS (`https://github.com/org/repo`), `ssh://`, `http://`, bare domain (`github.com/org/repo`), or the canonical shorthand (`github:org/repo`). All formats are normalized automatically.
 
 ### `amaru install [--force]`
 
@@ -194,6 +200,21 @@ Lock file updated.
 
 Without arguments, updates everything.
 
+### `amaru update --skillset <name>`
+
+Updates all members of a skillset. Detects new members added to the skillset in the registry and installs them automatically.
+
+```
+$ amaru update --skillset starter-pack
+Updating skillset "starter-pack" (4 members)...
+  ✓ Updating research: 1.0.3 → 1.1.0 (minor) [main]
+  ✓ Added command deploy-check@1.0.0 (new member)
+
+Skillset "starter-pack": 1 updated, 1 added.
+```
+
+The skillset digest in the lock file tracks whether any member versions have changed since the last install.
+
 ### `amaru list`
 
 Shows what's installed, with status and origin.
@@ -201,8 +222,8 @@ Shows what's installed, with status and origin.
 ```
 $ amaru list
 Skills:
-  research      1.0.3  ✓ up-to-date    [main]
-  plan          1.0.1  ⚠ 1.0.2 avail   [main]
+  research      1.0.3  ✓ up-to-date    [main] (via starter-pack)
+  plan          1.0.1  ⚠ 1.0.2 avail   [main] (via starter-pack)
   deploycheck   1.0.0  ✓ up-to-date    [platform]
 
 Commands:
@@ -212,18 +233,25 @@ Agents:
   code-reviewer 1.0.0  ✓ up-to-date    [main]
 ```
 
+Items installed via a skillset show their group provenance.
+
 ### `amaru add <name> [--type <type>] [--registry <alias>]`
 
-Adds a skill, command, or agent to the manifest and installs it in one step.
+Adds a skill, command, agent, or skillset to the manifest and installs it in one step.
 
 ```bash
 amaru add research                         # add a skill (default)
 amaru add dev/bootstrap --type command     # add a command
 amaru add code-reviewer --type agent       # add an agent
 amaru add deploycheck --registry platform  # specify registry
+amaru add starter-pack --type skillset     # add all items in a skillset
 ```
 
 If `--registry` is omitted and there are multiple registries, amaru searches all of them.
+
+**Skillsets** are registry-defined groups of skills, commands, and agents. Adding a skillset expands it to individual items in your manifest, each tagged with its origin group. Items that are already in your manifest are skipped.
+
+**Unversioned items** (no git tags in the registry) are tracked with the `"latest"` constraint — amaru downloads from the default branch and uses content hashing instead of semver for change detection.
 
 ### `amaru browse [--registry <alias>]`
 
@@ -239,6 +267,8 @@ $ amaru browse
     dev/bootstrap 2.0.0  [dev, setup]     Project bootstrap
   Agents:
     code-reviewer 1.0.0  [dev, review]    Review code changes with context
+  Skillsets:
+    starter-pack  (3 items) [onboarding]  Essential skills for new projects
 
 [platform] github:acme-org/platform-skills
   Skills:
@@ -369,6 +399,24 @@ my-skills-registry/
 ```
 
 Versions are tracked via git tags: `skill/research/1.0.3`, `command/dev/bootstrap/2.0.0`, `agent/code-reviewer/1.0.0`.
+
+Skillsets are defined in `registry.json`:
+
+```jsonc
+{
+  "skillsets": {
+    "starter-pack": {
+      "description": "Essential skills for new projects",
+      "tags": ["onboarding"],
+      "items": [
+        { "type": "skill", "name": "research" },
+        { "type": "skill", "name": "plan" },
+        { "type": "command", "name": "dev/bootstrap" }
+      ]
+    }
+  }
+}
+```
 
 amaru accesses registries through the GitHub API for installable items. For context sync, it uses sparse checkout via Sapling (preferred) or Git.
 

@@ -59,7 +59,18 @@ func runList(ctx context.Context) error {
 			var rows [][]string
 			for name, entry := range entries {
 				status := statusForItem(entry, itemType, name, indexes, m)
-				rows = append(rows, []string{name, entry.Version, status, fmt.Sprintf("[%s]", entry.Registry)})
+				displayVersion := entry.Version
+				if displayVersion == "" {
+					displayVersion = "latest"
+				}
+				origin := fmt.Sprintf("[%s]", entry.Registry)
+				// Show group provenance if present in manifest
+				if deps := m.DepsForType(itemType); deps != nil {
+					if spec, ok := deps[name]; ok && spec.Group != "" {
+						origin += fmt.Sprintf(" (via %s)", spec.Group)
+					}
+				}
+				rows = append(rows, []string{name, displayVersion, status, origin})
 			}
 			ui.Table(rows)
 		}
@@ -77,6 +88,11 @@ func statusForItem(entry manifest.LockedEntry, itemType types.ItemType, name str
 		return ui.Error("✗ not installed")
 	}
 
+	// "latest" items skip semver comparison
+	if entry.Version == "latest" || entry.Version == "" {
+		return ui.Success("✓ latest")
+	}
+
 	idx, ok := indexes[entry.Registry]
 	if !ok {
 		return "?"
@@ -85,6 +101,11 @@ func statusForItem(entry manifest.LockedEntry, itemType types.ItemType, name str
 	regEntries := idx.EntriesForType(itemType)
 	regEntry, ok := regEntries[name]
 	if !ok {
+		return ui.Success("✓ up-to-date")
+	}
+
+	// Skip semver comparison if registry entry has no version
+	if regEntry.Latest == "" {
 		return ui.Success("✓ up-to-date")
 	}
 

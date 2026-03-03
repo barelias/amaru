@@ -147,7 +147,7 @@ func (c *GitHubClient) apiRequest(ctx context.Context, path string) ([]byte, err
 
 // FetchIndex downloads and parses the registry.json from the default branch.
 func (c *GitHubClient) FetchIndex(ctx context.Context) (*RegistryIndex, error) {
-	data, err := c.getFileContent(ctx, "registry.json", "")
+	data, err := c.getFileContent(ctx, "amaru_registry.json", "")
 	if err != nil {
 		return nil, fmt.Errorf("fetching registry index: %w", err)
 	}
@@ -214,8 +214,8 @@ func (c *GitHubClient) DownloadFiles(ctx context.Context, itemType, name, versio
 		ref = fmt.Sprintf("%s/%s/%s", itemType, name, version)
 	}
 
-	// Determine the directory path in the repo
-	dirPath := types.ItemType(itemType).DirName() + "/" + name
+	// Determine the directory path in the repo (.amaru_registry/ prefix)
+	dirPath := ".amaru_registry/" + types.ItemType(itemType).DirName() + "/" + name
 
 	return c.downloadDirectory(ctx, dirPath, ref, "")
 }

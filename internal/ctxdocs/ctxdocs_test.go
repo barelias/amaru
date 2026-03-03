@@ -111,8 +111,8 @@ func TestSparsePaths(t *testing.T) {
 	if len(paths) != 2 {
 		t.Fatalf("expected 2 paths, got %d", len(paths))
 	}
-	if paths[0] != "context/myapp" {
-		t.Errorf("expected context/myapp, got %s", paths[0])
+	if paths[0] != ".amaru_registry/context/myapp" {
+		t.Errorf("expected .amaru_registry/context/myapp, got %s", paths[0])
 	}
 	if paths[1] != "AGENTS.md" {
 		t.Errorf("expected AGENTS.md, got %s", paths[1])
@@ -208,7 +208,7 @@ func (m *mockBackend) SparseClone(ctx context.Context, repoURL, targetDir string
 		return m.cloneErr
 	}
 	// Create the target directory to simulate a successful clone
-	return os.MkdirAll(filepath.Join(targetDir, "context"), 0755)
+	return os.MkdirAll(filepath.Join(targetDir, ".amaru_registry", "context"), 0755)
 }
 func (m *mockBackend) Pull(ctx context.Context, dir string) error {
 	m.calls = append(m.calls, "Pull")

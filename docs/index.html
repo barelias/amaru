@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>amaru — Skills, commands & agents manager for Claude Code</title>
+  <meta name="description" content="amaru connects your projects to centralized registries hosted on GitHub — managing skills, commands, and agents for Claude Code.">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style type="text/tailwindcss">
+    @theme {
+      --color-bg: #0b0d14;
+      --color-surface: #141721;
+      --color-surface-2: #1a1e2e;
+      --color-border: #1e2333;
+      --color-text: #e4e6ed;
+      --color-muted: #8b90a0;
+      --color-accent: #7c6ff5;
+      --color-accent-dim: #5b50c4;
+      --color-green: #4ade80;
+      --color-amber: #fbbf24;
+    }
+  </style>
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    code, pre, .mono { font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Source Code Pro", ui-monospace, monospace; }
+    ::selection { background: #7c6ff540; }
+  </style>
+</head>
+<body class="bg-bg text-text min-h-screen">
+
+  <!-- Header -->
+  <header class="fixed top-0 w-full z-50 bg-bg/80 backdrop-blur-md border-b border-border">
+    <nav class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <a href="#" class="text-xl font-bold tracking-tight">
+        <span class="text-accent">amaru</span>
+      </a>
+      <div class="flex items-center gap-6">
+        <a href="#features" class="text-muted hover:text-text text-sm hidden sm:block transition-colors">Features</a>
+        <a href="#quickstart" class="text-muted hover:text-text text-sm hidden sm:block transition-colors">Quick Start</a>
+        <a href="#commands" class="text-muted hover:text-text text-sm hidden sm:block transition-colors">Commands</a>
+        <a href="https://github.com/barelias/amaru" target="_blank" class="text-muted hover:text-text transition-colors" aria-label="GitHub">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Hero -->
+  <section class="pt-32 pb-20 px-6">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="inline-block mb-6 px-4 py-1.5 rounded-full border border-border text-sm text-muted">
+        Built for Claude Code
+      </div>
+      <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-tight mb-6">
+        Skills, commands &amp; agents<br>
+        <span class="text-accent">manager</span> for Claude Code
+      </h1>
+      <p class="text-lg sm:text-xl text-muted max-w-2xl mx-auto mb-10 leading-relaxed">
+        Connect your projects to centralized GitHub registries. Track versions, detect drift, sync shared context — all through a simple manifest file.
+      </p>
+      <div class="relative inline-block group">
+        <div class="bg-surface border border-border rounded-lg px-6 py-3 mono text-sm sm:text-base">
+          <span class="text-muted select-none">$ </span><span class="text-green">go install</span> github.com/barelias/amaru@latest
+        </div>
+        <button onclick="navigator.clipboard.writeText('go install github.com/barelias/amaru@latest')" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-muted hover:text-text opacity-0 group-hover:opacity-100 transition-opacity" title="Copy">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="py-20 px-6">
+    <div class="max-w-6xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">Everything you need</h2>
+      <p class="text-muted text-center mb-14 max-w-xl mx-auto">Manage the full lifecycle of Claude Code extensions across your team.</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+
+        <div class="bg-surface border border-border rounded-xl p-6 hover:border-accent/30 transition-colors">
+          <div class="text-accent text-2xl mb-3">^</div>
+          <h3 class="font-semibold text-lg mb-2">Version Management</h3>
+          <p class="text-muted text-sm leading-relaxed">Semver constraints (<code class="text-accent/80">^</code>, <code class="text-accent/80">~</code>, exact) with reproducible lock files. Every install is deterministic.</p>
+        </div>
+
+        <div class="bg-surface border border-border rounded-xl p-6 hover:border-accent/30 transition-colors">
+          <div class="text-amber text-2xl mb-3">#</div>
+          <h3 class="font-semibold text-lg mb-2">Drift Detection</h3>
+          <p class="text-muted text-sm leading-relaxed">Content hashing detects local edits. Know when skills diverge from the registry — or accept the drift intentionally.</p>
+        </div>
+
+        <div class="bg-surface border border-border rounded-xl p-6 hover:border-accent/30 transition-colors">
+          <div class="text-green text-2xl mb-3">{}</div>
+          <h3 class="font-semibold text-lg mb-2">Skillsets</h3>
+          <p class="text-muted text-sm leading-relaxed">Curated bundles of skills, commands, and agents. Add a whole pack at once — each item is tracked individually.</p>
+        </div>
+
+        <div class="bg-surface border border-border rounded-xl p-6 hover:border-accent/30 transition-colors">
+          <div class="text-accent text-2xl mb-3">&lt;&gt;</div>
+          <h3 class="font-semibold text-lg mb-2">Context Sync</h3>
+          <p class="text-muted text-sm leading-relaxed">Share brainstorms, plans, and solutions across projects via sparse checkout. Auto-syncs with git hooks.</p>
+        </div>
+
+        <div class="bg-surface border border-border rounded-xl p-6 hover:border-accent/30 transition-colors">
+          <div class="text-muted text-2xl mb-3">+</div>
+          <h3 class="font-semibold text-lg mb-2">Multi-Registry</h3>
+          <p class="text-muted text-sm leading-relaxed">Connect to multiple GitHub registries — public or private. Token, GitHub CLI, or no-auth supported.</p>
+        </div>
+
+        <div class="bg-surface border border-border rounded-xl p-6 hover:border-accent/30 transition-colors">
+          <div class="text-green text-2xl mb-3">@</div>
+          <h3 class="font-semibold text-lg mb-2">Self-Hosted</h3>
+          <p class="text-muted text-sm leading-relaxed">Any repo can be its own registry. Add <code class="text-accent/80">amaru_registry.json</code> and ship skills alongside your code.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section id="quickstart" class="py-20 px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">Get started in seconds</h2>
+      <p class="text-muted text-center mb-14 max-w-xl mx-auto">Six commands to go from zero to a fully managed project.</p>
+
+      <div class="bg-surface border border-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span>
+          <span class="w-3 h-3 rounded-full bg-[#febc2e]"></span>
+          <span class="w-3 h-3 rounded-full bg-[#28c840]"></span>
+          <span class="mono text-xs text-muted ml-2">terminal</span>
+        </div>
+        <pre class="p-6 text-sm leading-7 overflow-x-auto"><code><span class="text-muted"># 1. Initialize a manifest in your project</span>
+<span class="text-green">$</span> amaru init
+
+<span class="text-muted"># 2. Discover what's available</span>
+<span class="text-green">$</span> amaru browse
+
+<span class="text-muted"># 3. Add skills, commands, and agents</span>
+<span class="text-green">$</span> amaru add research
+<span class="text-green">$</span> amaru add dev/bootstrap --type command
+<span class="text-green">$</span> amaru add starter-pack --type skillset
+
+<span class="text-muted"># 4. Install everything</span>
+<span class="text-green">$</span> amaru install
+
+<span class="text-muted"># 5. Set up shared context documentation</span>
+<span class="text-green">$</span> amaru context init
+
+<span class="text-muted"># 6. Check for updates later</span>
+<span class="text-green">$</span> amaru check</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="py-20 px-6">
+    <div class="max-w-5xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">How it works</h2>
+      <p class="text-muted text-center mb-14 max-w-xl mx-auto">Two files at the root of your project. Both committed to the repo.</p>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Manifest -->
+        <div>
+          <h3 class="font-semibold text-lg mb-3">Manifest <code class="text-accent text-sm font-normal">amaru.json</code></h3>
+          <p class="text-muted text-sm mb-4">Declares registries, version constraints, and dependencies.</p>
+          <div class="bg-surface border border-border rounded-xl overflow-hidden">
+            <pre class="p-5 text-sm leading-6 overflow-x-auto"><code>{
+  <span class="text-accent">"version"</span>: <span class="text-green">"1.0.0"</span>,
+  <span class="text-accent">"registries"</span>: {
+    <span class="text-accent">"main"</span>: {
+      <span class="text-accent">"url"</span>: <span class="text-green">"github:acme/skills"</span>,
+      <span class="text-accent">"auth"</span>: <span class="text-green">"github"</span>
+    }
+  },
+  <span class="text-accent">"skills"</span>: {
+    <span class="text-accent">"research"</span>: <span class="text-green">"^1.0.0"</span>,
+    <span class="text-accent">"plan"</span>: <span class="text-green">"^1.0.0"</span>
+  },
+  <span class="text-accent">"agents"</span>: {
+    <span class="text-accent">"code-reviewer"</span>: <span class="text-green">"^1.0.0"</span>
+  }
+}</code></pre>
+          </div>
+        </div>
+
+        <!-- Lock -->
+        <div>
+          <h3 class="font-semibold text-lg mb-3">Lock file <code class="text-accent text-sm font-normal">amaru.lock</code></h3>
+          <p class="text-muted text-sm mb-4">Resolved versions, content hashes, and timestamps for reproducibility.</p>
+          <div class="bg-surface border border-border rounded-xl overflow-hidden">
+            <pre class="p-5 text-sm leading-6 overflow-x-auto"><code>{
+  <span class="text-accent">"skills"</span>: {
+    <span class="text-accent">"research"</span>: {
+      <span class="text-accent">"version"</span>: <span class="text-green">"1.0.3"</span>,
+      <span class="text-accent">"registry"</span>: <span class="text-green">"main"</span>,
+      <span class="text-accent">"hash"</span>: <span class="text-green">"a1b2c3d4"</span>,
+      <span class="text-accent">"installed_at"</span>: <span class="text-green">"2026-03-04"</span>
+    },
+    <span class="text-accent">"plan"</span>: {
+      <span class="text-accent">"version"</span>: <span class="text-green">"1.0.1"</span>,
+      <span class="text-accent">"registry"</span>: <span class="text-green">"main"</span>,
+      <span class="text-accent">"hash"</span>: <span class="text-green">"e5f6a7b8"</span>
+    }
+  }
+}</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Commands -->
+  <section id="commands" class="py-20 px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">CLI Reference</h2>
+      <p class="text-muted text-center mb-14 max-w-xl mx-auto">Every command you need, nothing you don't.</p>
+
+      <div class="bg-surface border border-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border text-left">
+              <th class="px-5 py-3 font-medium text-muted">Command</th>
+              <th class="px-5 py-3 font-medium text-muted">Description</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru init</td><td class="px-5 py-3 text-muted">Generate initial amaru.json interactively</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru browse</td><td class="px-5 py-3 text-muted">List available items from registries</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru add &lt;name&gt;</td><td class="px-5 py-3 text-muted">Add a skill/command/agent/skillset and install</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru install</td><td class="px-5 py-3 text-muted">Install everything from the manifest</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru check</td><td class="px-5 py-3 text-muted">Check for updates and local drift</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru update</td><td class="px-5 py-3 text-muted">Update to latest compatible versions</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru list</td><td class="px-5 py-3 text-muted">Show installed items with status</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru ignore</td><td class="px-5 py-3 text-muted">Accept local drift for an item</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru context init</td><td class="px-5 py-3 text-muted">Set up context documentation sync</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru context sync</td><td class="px-5 py-3 text-muted">Pull latest context from registry</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru context push</td><td class="px-5 py-3 text-muted">Push local context changes back</td></tr>
+            <tr><td class="px-5 py-3 mono text-accent whitespace-nowrap">amaru repo init</td><td class="px-5 py-3 text-muted">Scaffold a new registry repository</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Registry Structure -->
+  <section class="py-20 px-6">
+    <div class="max-w-4xl mx-auto">
+      <h2 class="text-3xl font-bold text-center mb-4">Registry structure</h2>
+      <p class="text-muted text-center mb-14 max-w-xl mx-auto">A registry is just a GitHub repo with a simple convention.</p>
+
+      <div class="bg-surface border border-border rounded-xl overflow-hidden">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-border">
+          <span class="mono text-xs text-muted">my-skills-registry/</span>
+        </div>
+        <pre class="p-6 text-sm leading-7 overflow-x-auto"><code><span class="text-accent">amaru_registry.json</span>            <span class="text-muted"># Package index</span>
+<span class="text-muted">AGENTS.md</span>                        <span class="text-muted"># Navigation</span>
+<span class="text-accent">.amaru_registry/</span>                 <span class="text-muted"># All content</span>
+  <span class="text-accent">skills/</span>
+    research/
+      <span class="text-green">skill.md</span>                     <span class="text-muted"># Skill content</span>
+      <span class="text-green">manifest.json</span>                <span class="text-muted"># Metadata</span>
+  <span class="text-accent">commands/</span>
+    dev/bootstrap/
+      <span class="text-green">command.md</span>
+      <span class="text-green">manifest.json</span>
+  <span class="text-accent">agents/</span>
+    code-reviewer/
+      <span class="text-green">agent.md</span>
+      <span class="text-green">manifest.json</span>
+  <span class="text-accent">context/</span>
+    my-app/
+      brainstorms/
+      plans/
+      solutions/</code></pre>
+      </div>
+
+      <p class="text-muted text-sm text-center mt-6">
+        Versions are tracked via git tags: <code class="text-accent">skill/research/1.0.3</code>
+      </p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 px-6">
+    <div class="max-w-3xl mx-auto text-center">
+      <h2 class="text-3xl font-bold mb-4">Ready to get started?</h2>
+      <p class="text-muted mb-8 max-w-lg mx-auto">Install amaru and connect your first registry in under a minute.</p>
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="https://github.com/barelias/amaru" target="_blank" class="inline-flex items-center gap-2 bg-accent hover:bg-accent-dim text-white font-medium px-6 py-3 rounded-lg transition-colors">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          View on GitHub
+        </a>
+        <a href="#quickstart" class="inline-flex items-center gap-2 border border-border hover:border-accent/50 text-text font-medium px-6 py-3 rounded-lg transition-colors">
+          Quick Start Guide
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="border-t border-border py-10 px-6">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="font-bold text-accent">amaru</span>
+        <span class="text-muted text-sm">MIT License</span>
+      </div>
+      <p class="text-muted text-sm">
+        Built for <a href="https://claude.ai" target="_blank" class="text-accent hover:underline">Claude Code</a>
+      </p>
+    </div>
+  </footer>
+
+</body>
+</html>

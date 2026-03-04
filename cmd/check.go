@@ -15,15 +15,15 @@ var checkQuiet bool
 
 var checkCmd = &cobra.Command{
 	Use:   "check",
-	Short: "Verifica atualizações disponíveis e drift local",
-	Long:  "Compara lock local com registries. Reporta atualizações disponíveis e drift local.",
+	Short: "Check for available updates and local drift",
+	Long:  "Compare local lock with registries. Reports available updates and local drift.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runCheck(cmd.Context())
 	},
 }
 
 func init() {
-	checkCmd.Flags().BoolVar(&checkQuiet, "quiet", false, "Output mínimo, só warnings")
+	checkCmd.Flags().BoolVar(&checkQuiet, "quiet", false, "Minimal output, only warnings")
 	rootCmd.AddCommand(checkCmd)
 }
 
@@ -77,7 +77,7 @@ func printCheckResult(result *checker.CheckResult, quiet bool) {
 			return
 		}
 		var lines []string
-		lines = append(lines, fmt.Sprintf("🐍 amaru: %d atualização(ões) disponível(is)", len(result.Updates)))
+		lines = append(lines, fmt.Sprintf("🐍 amaru: %d update(s) available", len(result.Updates)))
 		for _, u := range result.Updates {
 			suffix := ""
 			if u.Category == "major" {
@@ -86,17 +86,17 @@ func printCheckResult(result *checker.CheckResult, quiet bool) {
 			lines = append(lines, fmt.Sprintf("  %s %s → %s%s [%s]", u.Name, u.Current, u.Latest, suffix, u.Registry))
 		}
 		for _, d := range result.Drifts {
-			lines = append(lines, fmt.Sprintf("  %s: drift detectado [%s]", d.Name, d.Registry))
+			lines = append(lines, fmt.Sprintf("  %s: drift detected [%s]", d.Name, d.Registry))
 		}
 		lines = append(lines, "")
-		lines = append(lines, "  Rode `amaru update` para atualizar")
+		lines = append(lines, "  Run `amaru update` to update")
 		ui.Box(lines)
 		return
 	}
 
 	// Full output
 	if len(result.Updates) > 0 {
-		ui.Header("⚠ Atualizações disponíveis:")
+		ui.Header("⚠ Updates available:")
 		for _, u := range result.Updates {
 			category := u.Category
 			if category == "major" {
@@ -110,7 +110,7 @@ func printCheckResult(result *checker.CheckResult, quiet bool) {
 	}
 
 	if len(result.Drifts) > 0 {
-		ui.Header("⚠ Drift detectado (editado localmente):")
+		ui.Header("⚠ Drift detected (locally edited):")
 		for _, d := range result.Drifts {
 			fmt.Printf("  %s: hash local %s ≠ central %s (v%s) [%s]\n",
 				d.Name, d.LocalHash, d.RemoteHash, d.Version, d.Registry)
@@ -121,5 +121,5 @@ func printCheckResult(result *checker.CheckResult, quiet bool) {
 		fmt.Println()
 	}
 
-	fmt.Printf("\n✓ %d skills/commands atualizados\n", result.UpToDate)
+	fmt.Printf("\n✓ %d skills/commands up to date\n", result.UpToDate)
 }

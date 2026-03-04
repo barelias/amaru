@@ -15,15 +15,15 @@ var browseRegistry string
 
 var browseCmd = &cobra.Command{
 	Use:   "browse",
-	Short: "Lista skills/commands/agents disponíveis nos registries",
-	Long:  "Lista tudo disponível nos registries configurados (discovery).",
+	Short: "List available skills/commands/agents from registries",
+	Long:  "List everything available in configured registries (discovery).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runBrowse(cmd.Context())
 	},
 }
 
 func init() {
-	browseCmd.Flags().StringVar(&browseRegistry, "registry", "", "Filtrar por registry")
+	browseCmd.Flags().StringVar(&browseRegistry, "registry", "", "Filter by registry")
 	rootCmd.AddCommand(browseCmd)
 }
 

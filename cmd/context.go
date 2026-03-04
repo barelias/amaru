@@ -14,14 +14,14 @@ import (
 
 var contextCmd = &cobra.Command{
 	Use:   "context",
-	Short: "Gerencia context documentation do registry centralizado",
-	Long:  "Sincroniza compound engineering context docs (brainstorms, plans, solutions) do registry centralizado.",
+	Short: "Manage context documentation from the centralized registry",
+	Long:  "Sync compound engineering context docs (brainstorms, plans, solutions) from the centralized registry.",
 }
 
 var contextInitCmd = &cobra.Command{
 	Use:   "init",
-	Short: "Configura sync de context para o projeto atual",
-	Long:  "Clona a seção de context do registry usando sparse checkout (Sapling ou Git).",
+	Short: "Set up context sync for the current project",
+	Long:  "Clone the context section of the registry using sparse checkout (Sapling or Git).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContextInit(cmd.Context())
 	},
@@ -29,7 +29,7 @@ var contextInitCmd = &cobra.Command{
 
 var contextSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Puxa context mais recente do repo centralizado",
+	Short: "Pull latest context from the centralized repo",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContextSync(cmd.Context())
 	},
@@ -39,7 +39,7 @@ var contextPushMessage string
 
 var contextPushCmd = &cobra.Command{
 	Use:   "push",
-	Short: "Envia mudanças locais de context de volta ao repo centralizado",
+	Short: "Push local context changes back to the centralized repo",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runContextPush(cmd.Context())
 	},
@@ -47,7 +47,7 @@ var contextPushCmd = &cobra.Command{
 
 var contextPathCmd = &cobra.Command{
 	Use:    "path",
-	Short:  "Imprime o caminho local do context",
+	Short:  "Print the local context path",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		m, err := loadManifest()

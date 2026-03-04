@@ -22,8 +22,8 @@ var (
 
 var addCmd = &cobra.Command{
 	Use:   "add <name>",
-	Short: "Adiciona uma skill/command/agent/skillset ao manifesto e instala",
-	Long:  "Adiciona uma skill/command/agent ao manifesto (amaru.json) e instala os arquivos.\nPara skillsets, expande os membros em itens individuais.",
+	Short: "Add a skill/command/agent/skillset to the manifest and install",
+	Long:  "Add a skill/command/agent to the manifest (amaru.json) and install the files.\nFor skillsets, expands members into individual items.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runAdd(cmd.Context(), args[0])
@@ -33,7 +33,7 @@ var addCmd = &cobra.Command{
 func init() {
 	addCmd.Flags().StringVar(&addType, "type", "skill", "Item type: skill, command, agent, or skillset")
 	addCmd.Flags().BoolVar(&addIsCommand, "command", false, "Shorthand for --type=command")
-	addCmd.Flags().StringVar(&addRegistry, "registry", "", "Registry alias (obrigatório se múltiplos registries)")
+	addCmd.Flags().StringVar(&addRegistry, "registry", "", "Registry alias (required if multiple registries)")
 	rootCmd.AddCommand(addCmd)
 }
 

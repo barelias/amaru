@@ -53,7 +53,6 @@ internal/
 ## Code Style
 
 - Standard Go formatting (`gofmt`)
-- User-facing messages in Portuguese (project convention)
-- Internal code, comments, and docs in English
+- All user-facing messages, code, comments, and docs in English
 - Error wrapping with `fmt.Errorf("context: %w", err)` pattern
 - Cobra commands: one file per command in `cmd/`, registered via `init()`

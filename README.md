@@ -126,9 +126,9 @@ Registry URL (ex: github:org/skills-repo): git@github.com:acme-org/acme-skills.g
   → normalized to: github:acme-org/acme-skills
 Registry alias [acme]: acme
 Auth method (github/token/none) [github]: github
-Adicionar outro registry? (y/N): N
+Add another registry? (y/N): N
 
-amaru.json criado. Rode `amaru browse` para ver skills disponíveis.
+amaru.json created. Run `amaru browse` to see available skills.
 ```
 
 Accepts any GitHub URL format — SSH (`git@github.com:org/repo.git`), HTTPS (`https://github.com/org/repo`), `ssh://`, `http://`, bare domain (`github.com/org/repo`), or the canonical shorthand (`github:org/repo`). All formats are normalized automatically.
@@ -163,25 +163,25 @@ Compares your lock against the registries. Reports available updates and local d
 
 ```
 $ amaru check
-⚠ Atualizações disponíveis:
+⚠ Updates available:
   research: 1.0.3 → 1.1.0 (minor) [main]
   compound: 1.1.0 → 2.0.0 (MAJOR — breaking) [main]
 
-⚠ Drift detectado (editado localmente):
+⚠ Drift detected (locally edited):
   plan: hash local b2c3d4 ≠ central a1b2c3 (v1.0.1) [main]
 
-✓ 7 skills/commands atualizados
+✓ 7 skills/commands up to date
 ```
 
 Use `--quiet` for the compact box format (designed for session-start hooks):
 
 ```
 ╭──────────────────────────────────────────────────╮
-│ 🐍 amaru: 2 atualização(ões) disponível(is)      │
+│ 🐍 amaru: 2 update(s) available                  │
 │   research 1.0.3 → 1.1.0 [main]                 │
 │   compound 1.1.0 → 2.0.0 (MAJOR) [main]         │
 │                                                  │
-│   Rode `amaru update` para atualizar             │
+│   Run `amaru update` to update                   │
 ╰──────────────────────────────────────────────────╯
 ```
 

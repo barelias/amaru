@@ -38,6 +38,8 @@ internal/
 - **Skillsets**: Registry-defined groups that expand to individual items on install. Not an item type — they live in the registry index and lock file only.
 - **Version constraints**: Follow npm conventions (`^`, `~`, exact). `"latest"` is a special non-semver constraint for unversioned items.
 - **Registry URLs**: Canonical form is `github:org/repo`. Multiple formats accepted (SSH, HTTPS, bare domain) and normalized on init.
+- **Registry layout**: `amaru_registry.json` at repo root, all content under `.amaru_registry/` (skills/, commands/, agents/, context/). The `amaru_version` field in the index enables future structure migrations.
+- **Self-hosted registries**: Any repo can be its own registry — this repo ships an `amaru-usage` skill via `amaru_registry.json` + `.amaru_registry/skills/amaru-usage/`.
 - **DependencySpec**: Marshals as shorthand string when only version is set, full object when registry or group is present.
 - **Lock entries**: Store resolved version, registry alias, content hash, and timestamp.
 
@@ -51,7 +53,6 @@ internal/
 ## Code Style
 
 - Standard Go formatting (`gofmt`)
-- User-facing messages in Portuguese (project convention)
-- Internal code, comments, and docs in English
+- All user-facing messages, code, comments, and docs in English
 - Error wrapping with `fmt.Errorf("context: %w", err)` pattern
 - Cobra commands: one file per command in `cmd/`, registered via `init()`

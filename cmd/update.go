@@ -19,8 +19,8 @@ var updateSkillset string
 
 var updateCmd = &cobra.Command{
 	Use:   "update [name]",
-	Short: "Atualiza skills/commands para versões compatíveis mais recentes",
-	Long:  "Atualiza skills/commands para versões mais recentes compatíveis com os ranges do manifesto.\nUse --skillset para atualizar todos os membros de um skillset.",
+	Short: "Update skills/commands to latest compatible versions",
+	Long:  "Update skills/commands to the latest versions compatible with manifest ranges.\nUse --skillset to update all members of a skillset.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var name string
@@ -76,9 +76,9 @@ func runUpdate(ctx context.Context, filterName string) error {
 
 	if updated == 0 {
 		if filterName != "" {
-			fmt.Printf("\n%s já está na versão mais recente compatível.\n", filterName)
+			fmt.Printf("\n%s is already at the latest compatible version.\n", filterName)
 		} else {
-			fmt.Println("\nTudo já está atualizado.")
+			fmt.Println("\nEverything is already up to date.")
 		}
 		return nil
 	}

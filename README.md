@@ -126,9 +126,9 @@ Registry URL (ex: github:org/skills-repo): git@github.com:acme-org/acme-skills.g
   → normalized to: github:acme-org/acme-skills
 Registry alias [acme]: acme
 Auth method (github/token/none) [github]: github
-Adicionar outro registry? (y/N): N
+Add another registry? (y/N): N
 
-amaru.json criado. Rode `amaru browse` para ver skills disponíveis.
+amaru.json created. Run `amaru browse` to see available skills.
 ```
 
 Accepts any GitHub URL format — SSH (`git@github.com:org/repo.git`), HTTPS (`https://github.com/org/repo`), `ssh://`, `http://`, bare domain (`github.com/org/repo`), or the canonical shorthand (`github:org/repo`). All formats are normalized automatically.
@@ -163,25 +163,25 @@ Compares your lock against the registries. Reports available updates and local d
 
 ```
 $ amaru check
-⚠ Atualizações disponíveis:
+⚠ Updates available:
   research: 1.0.3 → 1.1.0 (minor) [main]
   compound: 1.1.0 → 2.0.0 (MAJOR — breaking) [main]
 
-⚠ Drift detectado (editado localmente):
+⚠ Drift detected (locally edited):
   plan: hash local b2c3d4 ≠ central a1b2c3 (v1.0.1) [main]
 
-✓ 7 skills/commands atualizados
+✓ 7 skills/commands up to date
 ```
 
 Use `--quiet` for the compact box format (designed for session-start hooks):
 
 ```
 ╭──────────────────────────────────────────────────╮
-│ 🐍 amaru: 2 atualização(ões) disponível(is)      │
+│ 🐍 amaru: 2 update(s) available                  │
 │   research 1.0.3 → 1.1.0 [main]                 │
 │   compound 1.1.0 → 2.0.0 (MAJOR) [main]         │
 │                                                  │
-│   Rode `amaru update` para atualizar             │
+│   Run `amaru update` to update                   │
 ╰──────────────────────────────────────────────────╯
 ```
 
@@ -369,38 +369,41 @@ A registry is just a GitHub repo with this layout:
 
 ```
 my-skills-registry/
-├── registry.json              # Auto-generated index (by CI)
-├── AGENTS.md                  # Root navigation + registry structure
-├── .sparse-profiles/          # Sapling sparse checkout profiles
-│   └── my-app
-├── skills/
-│   ├── research/
-│   │   ├── skill.md           # The skill content
-│   │   ├── manifest.json      # Metadata + version
-│   │   └── examples/          # Optional
-│   └── plan/
-│       ├── skill.md
-│       └── manifest.json
-├── commands/
-│   └── dev/
-│       └── bootstrap/
-│           ├── command.md
-│           └── manifest.json
-├── agents/
-│   └── code-reviewer/
-│       ├── agent.md
-│       └── manifest.json
-└── context/
-    └── my-app/
-        ├── AGENTS.md          # Per-project navigation
-        ├── brainstorms/
-        ├── plans/
-        └── solutions/
+├── amaru_registry.json            # Package index (auto-updated by CI)
+├── AGENTS.md                      # Root navigation + registry structure
+└── .amaru_registry/               # All registry content
+    ├── .sparse-profiles/          # Sapling sparse checkout profiles
+    │   └── my-app
+    ├── skills/
+    │   ├── research/
+    │   │   ├── skill.md           # The skill content
+    │   │   ├── manifest.json      # Metadata + version
+    │   │   └── examples/          # Optional
+    │   └── plan/
+    │       ├── skill.md
+    │       └── manifest.json
+    ├── commands/
+    │   └── dev/
+    │       └── bootstrap/
+    │           ├── command.md
+    │           └── manifest.json
+    ├── agents/
+    │   └── code-reviewer/
+    │       ├── agent.md
+    │       └── manifest.json
+    └── context/
+        └── my-app/
+            ├── AGENTS.md          # Per-project navigation
+            ├── brainstorms/
+            ├── plans/
+            └── solutions/
 ```
+
+The `.amaru_registry/` prefix keeps registry content separate from the repo's own source code, making it easy for any tool to double as its own registry.
 
 Versions are tracked via git tags: `skill/research/1.0.3`, `command/dev/bootstrap/2.0.0`, `agent/code-reviewer/1.0.0`.
 
-Skillsets are defined in `registry.json`:
+Skillsets are defined in `amaru_registry.json`:
 
 ```jsonc
 {
@@ -450,6 +453,16 @@ To get automatic update warnings when you start a Claude Code session, add a hoo
 if [ -f "amaru.json" ]; then
   amaru check --quiet 2>/dev/null
 fi
+```
+
+## Self-Hosted Registry
+
+This repo is its own registry — it ships an `amaru-usage` skill that teaches Claude Code how to use amaru. Any tool can do the same: add `amaru_registry.json` and `.amaru_registry/` to your repo.
+
+```bash
+# In any project:
+amaru init                    # Use github:barelias/amaru as the registry URL
+amaru add amaru-usage         # Install the amaru-usage skill
 ```
 
 ## License

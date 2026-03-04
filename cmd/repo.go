@@ -14,16 +14,16 @@ import (
 
 var repoCmd = &cobra.Command{
 	Use:   "repo",
-	Short: "Gerencia repositórios de registry",
-	Long:  "Comandos para criar e gerenciar repositórios de registry amaru.",
+	Short: "Manage registry repositories",
+	Long:  "Commands to create and manage amaru registry repositories.",
 }
 
 var repoInitProject string
 
 var repoInitCmd = &cobra.Command{
 	Use:   "init [directory]",
-	Short: "Cria estrutura de um novo registry repo",
-	Long:  "Cria a estrutura de diretórios para um repositório de registry amaru centralizado.",
+	Short: "Create structure for a new registry repo",
+	Long:  "Create the directory structure for a centralized amaru registry repository.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := "."
@@ -35,7 +35,7 @@ var repoInitCmd = &cobra.Command{
 }
 
 func init() {
-	repoInitCmd.Flags().StringVar(&repoInitProject, "project", "", "Nome do projeto inicial para setup de context")
+	repoInitCmd.Flags().StringVar(&repoInitProject, "project", "", "Initial project name for context setup")
 	repoCmd.AddCommand(repoInitCmd)
 	rootCmd.AddCommand(repoCmd)
 }
@@ -60,10 +60,10 @@ func runRepoInit(dir string) error {
 	}
 
 	ui.Check("Registry scaffolded at %s", dir)
-	fmt.Println("  Created: registry.json, AGENTS.md, skills/, commands/, agents/, context/")
+	fmt.Println("  Created: amaru_registry.json, AGENTS.md, .amaru_registry/{skills,commands,agents,context}/")
 	if project != "" {
-		fmt.Printf("  Created: context/%s/ with brainstorms/, plans/, solutions/\n", project)
-		fmt.Printf("  Created: .sparse-profiles/%s\n", project)
+		fmt.Printf("  Created: .amaru_registry/context/%s/ with brainstorms/, plans/, solutions/\n", project)
+		fmt.Printf("  Created: .amaru_registry/.sparse-profiles/%s\n", project)
 	}
 	fmt.Println("\n  Next steps:")
 	fmt.Println("    1. git init && git add . && git commit -m 'Initial registry'")

@@ -10,8 +10,8 @@ import (
 
 var ignoreCmd = &cobra.Command{
 	Use:   "ignore <name>",
-	Short: "Marca item como drift aceito",
-	Long:  "Marca uma skill/command como 'drift aceito' — não reporta warning de hash mismatch.",
+	Short: "Mark item as accepted drift",
+	Long:  "Mark a skill/command as 'accepted drift' — suppresses hash mismatch warnings.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runIgnore(args[0])
@@ -20,8 +20,8 @@ var ignoreCmd = &cobra.Command{
 
 var unignoreCmd = &cobra.Command{
 	Use:   "unignore <name>",
-	Short: "Remove item da lista de drift aceito",
-	Long:  "Remove uma skill/command da lista de ignored, voltando a reportar drift.",
+	Short: "Remove item from accepted drift list",
+	Long:  "Remove a skill/command from the ignored list, re-enabling drift reporting.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runUnignore(args[0])
@@ -41,12 +41,12 @@ func runIgnore(name string) error {
 
 	// Check if already ignored
 	if m.IsIgnored(name) {
-		return fmt.Errorf("%s já está na lista de ignored", name)
+		return fmt.Errorf("%s is already in the ignored list", name)
 	}
 
 	// Check if item exists in manifest
 	if !m.HasDep(name) {
-		return fmt.Errorf("%s não encontrado no manifesto", name)
+		return fmt.Errorf("%s not found in manifest", name)
 	}
 
 	m.Ignored = append(m.Ignored, name)
@@ -55,8 +55,8 @@ func runIgnore(name string) error {
 		return fmt.Errorf("saving manifest: %w", err)
 	}
 
-	fmt.Printf("%s marcado como drift aceito. Não será reportado no check.\n", name)
-	fmt.Printf("Para reverter: amaru unignore %s\n", name)
+	fmt.Printf("%s marked as accepted drift. Will not be reported during check.\n", name)
+	fmt.Printf("To revert: amaru unignore %s\n", name)
 	return nil
 }
 
@@ -67,7 +67,7 @@ func runUnignore(name string) error {
 	}
 
 	if !m.IsIgnored(name) {
-		return fmt.Errorf("%s não está na lista de ignored", name)
+		return fmt.Errorf("%s is not in the ignored list", name)
 	}
 
 	var newIgnored []string
@@ -82,6 +82,6 @@ func runUnignore(name string) error {
 		return fmt.Errorf("saving manifest: %w", err)
 	}
 
-	fmt.Printf("%s removido da lista de ignored. Drift será reportado no check.\n", name)
+	fmt.Printf("%s removed from ignored list. Drift will be reported during check.\n", name)
 	return nil
 }

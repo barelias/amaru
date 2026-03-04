@@ -16,8 +16,8 @@ import (
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "Lista skills, commands e agents instalados",
-	Long:  "Lista tudo instalado no projeto com status e origem.",
+	Short: "List installed skills, commands, and agents",
+	Long:  "List everything installed in the project with status and origin.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runList(cmd.Context())
 	},
@@ -77,7 +77,7 @@ func runList(ctx context.Context) error {
 	}
 
 	if !hasItems {
-		fmt.Println("Nenhum item instalado. Rode 'amaru install' primeiro.")
+		fmt.Println("No items installed. Run 'amaru install' first.")
 	}
 
 	return nil

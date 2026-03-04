@@ -7,13 +7,14 @@ import (
 	"github.com/barelias/amaru/internal/types"
 )
 
-// RegistryIndex is the parsed registry.json from the remote registry.
+// RegistryIndex is the parsed amaru_registry.json from the remote registry.
 type RegistryIndex struct {
-	UpdatedAt string                      `json:"updated_at"`
-	Skills    map[string]RegistryEntry    `json:"skills,omitempty"`
-	Commands  map[string]RegistryEntry    `json:"commands,omitempty"`
-	Agents    map[string]RegistryEntry    `json:"agents,omitempty"`
-	Skillsets map[string]SkillsetEntry    `json:"skillsets,omitempty"`
+	AmaruVersion string                      `json:"amaru_version"`
+	UpdatedAt    string                      `json:"updated_at"`
+	Skills       map[string]RegistryEntry    `json:"skills,omitempty"`
+	Commands     map[string]RegistryEntry    `json:"commands,omitempty"`
+	Agents       map[string]RegistryEntry    `json:"agents,omitempty"`
+	Skillsets    map[string]SkillsetEntry    `json:"skillsets,omitempty"`
 }
 
 // EntriesForType returns the registry entries for a given item type.

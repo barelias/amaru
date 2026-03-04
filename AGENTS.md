@@ -33,6 +33,6 @@ amaru (CLI entry point)
 - `manifest.Manifest` — parsed amaru.json (registries, skills, commands, agents)
 - `manifest.Lock` — parsed amaru.lock (locked entries + skillsets)
 - `manifest.DependencySpec` — version constraint + optional registry + optional group
-- `registry.RegistryIndex` — parsed registry.json from remote (entries + skillsets)
+- `registry.RegistryIndex` — parsed amaru_registry.json from remote (entries + skillsets, includes AmaruVersion)
 - `registry.Client` — interface for FetchIndex, ListVersions, DownloadFiles
 - `types.ItemType` — "skill" | "command" | "agent"

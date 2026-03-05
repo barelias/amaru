@@ -10,11 +10,20 @@ amaru connects your projects to centralized registries hosted on GitHub — mana
 
 ## Install
 
+**From GitHub Releases** (prebuilt binaries for Linux, macOS, Windows):
+
+```bash
+# Download the latest release for your platform from:
+# https://github.com/barelias/amaru/releases
+```
+
+**With Go:**
+
 ```bash
 go install github.com/barelias/amaru@latest
 ```
 
-Or build from source:
+**From source:**
 
 ```bash
 git clone https://github.com/barelias/amaru.git

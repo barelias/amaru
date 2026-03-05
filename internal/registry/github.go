@@ -9,9 +9,15 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/barelias/amaru/internal/types"
+)
+
+const (
+	maxRetries    = 3
+	retryBaseWait = 500 * time.Millisecond
 )
 
 // GitHubClient implements Client using the GitHub API.
@@ -109,40 +115,79 @@ func NormalizeURL(url string) (string, error) {
 	return fmt.Sprintf("github:%s/%s", owner, repo), nil
 }
 
+func isRetryable(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests ||
+		statusCode == http.StatusBadGateway ||
+		statusCode == http.StatusServiceUnavailable ||
+		statusCode == http.StatusGatewayTimeout
+}
+
 func (c *GitHubClient) apiRequest(ctx context.Context, path string) ([]byte, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/%s", c.Owner, c.Repo, path)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
 	token, err := c.Auth.Token(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("authentication failed: %w", err)
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+
+	var lastErr error
+	for attempt := range maxRetries {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("API request failed: %w", err)
+			if attempt < maxRetries-1 {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(retryBaseWait << attempt):
+				}
+			}
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			return body, nil
+		}
+
+		if !isRetryable(resp.StatusCode) {
+			return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+		}
+
+		lastErr = fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
+		if attempt < maxRetries-1 {
+			wait := retryBaseWait << attempt
+			if resp.StatusCode == http.StatusTooManyRequests {
+				if ra := resp.Header.Get("Retry-After"); ra != "" {
+					if secs, err := time.ParseDuration(ra + "s"); err == nil {
+						wait = secs
+					}
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("API request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	return body, nil
+	return nil, lastErr
 }
 
 // FetchIndex downloads and parses the registry.json from the default branch.

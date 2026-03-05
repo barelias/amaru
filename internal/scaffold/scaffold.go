@@ -44,6 +44,7 @@ func ScaffoldRepo(cfg RepoConfig) error {
 		"skills":        map[string]interface{}{},
 		"commands":      map[string]interface{}{},
 		"agents":        map[string]interface{}{},
+		"skillsets":     map[string]interface{}{},
 	}
 	if err := writeJSON(filepath.Join(cfg.Dir, "amaru_registry.json"), registryJSON); err != nil {
 		return err

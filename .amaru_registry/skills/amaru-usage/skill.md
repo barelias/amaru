@@ -44,6 +44,12 @@ amaru list                              # Show installed items with status
 | Accepting local edits to a skill | `amaru ignore <name>` |
 | Setting up shared docs | `amaru context init` |
 | Creating a new registry | `amaru repo init` |
+| Adding a skill to a registry | `amaru repo add <name>` |
+| Publishing a version | `amaru repo tag <name> <version>` |
+| Checking registry health | `amaru repo validate` |
+| Listing registry contents | `amaru repo list` |
+| Removing unused items | `amaru repo remove <name>` |
+| Viewing item details | `amaru repo info <name>` |
 
 ## Registry URL Formats
 
@@ -74,3 +80,20 @@ amaru context push    # Push local changes back
 ```
 
 Context docs are synced to `docs/context/` (configurable) and auto-sync via git hooks.
+
+## Registry Authoring
+
+Manage items in a registry repository:
+
+```bash
+amaru repo init /path/to/registry       # Scaffold empty registry
+amaru repo add my-skill                  # Create new skill with templates
+amaru repo add my-cmd --type command     # Create new command
+amaru repo add my-agent --type agent     # Create new agent
+amaru repo add pack --type skillset --items "skill/my-skill,command/my-cmd"
+amaru repo list                          # Show all items
+amaru repo validate                      # Check consistency
+amaru repo tag my-skill 1.0.0           # Tag version + update index
+amaru repo info my-skill                 # Show item details
+amaru repo remove old-skill              # Remove from registry
+```

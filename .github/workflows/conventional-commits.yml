@@ -1,0 +1,52 @@
+name: Conventional Commits
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate commit messages
+        run: |
+          VALID_PREFIXES="feat|fix|refactor|docs|test|chore|release|ci|perf|style|build|revert"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          INVALID=0
+          while IFS= read -r line; do
+            SHA=$(echo "$line" | cut -d' ' -f1)
+            MSG=$(echo "$line" | cut -d' ' -f2-)
+
+            # Allow merge commits
+            if echo "$MSG" | grep -qE "^Merge "; then
+              continue
+            fi
+
+            if ! echo "$MSG" | grep -qE "^($VALID_PREFIXES)(\(.+\))?: .+"; then
+              echo "::error::Invalid commit message: $MSG (sha: $SHA)"
+              echo "  Expected format: <type>[optional scope]: <description>"
+              echo "  Valid types: $VALID_PREFIXES"
+              INVALID=1
+            fi
+          done < <(git log --oneline "$BASE_SHA".."$HEAD_SHA")
+
+          if [ "$INVALID" -eq 1 ]; then
+            echo ""
+            echo "All commit messages must follow Conventional Commits:"
+            echo "  feat: add new feature"
+            echo "  fix: resolve a bug"
+            echo "  docs: update documentation"
+            echo "  refactor(scope): restructure code"
+            exit 1
+          fi
+
+          echo "All commit messages follow conventional commits format."

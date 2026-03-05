@@ -27,6 +27,10 @@ amaru (CLI entry point)
 3. **Update**: `cmd/update.go` → `resolver.Resolve()` finds best compatible version → downloads + installs if newer
 4. **Check**: `internal/checker/checker.go` → compares locked versions against registry, detects hash drift
 5. **Skillsets**: `cmd/add.go:runAddSkillset()` → validates all members → installs each → records digest in `lock.Skillsets`
+6. **Repo Add**: `cmd/repo_add.go` → `scaffold.FindRegistryRoot()` → `scaffold.LoadLocalIndex()` → `scaffold.ItemManifestFor()` → write files → `scaffold.SaveLocalIndex()`
+7. **Repo Tag**: `cmd/repo_tag.go` → validate item exists → update manifest.json + index → git commit → git tag
+8. **Repo Validate**: `cmd/repo_validate.go` → `scaffold.LoadLocalIndex()` → walk `.amaru_registry/` → cross-reference entries vs filesystem
+9. **Repo Remove**: `cmd/repo_remove.go` → check skillset deps → remove from index → delete directory → `scaffold.SaveLocalIndex()`
 
 ## Important Types
 

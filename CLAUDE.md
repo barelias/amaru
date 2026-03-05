@@ -26,7 +26,7 @@ internal/
   manifest/       # amaru.json and amaru.lock parsing/saving
   registry/       # GitHub API client, registry types, authentication
   resolver/       # Semver constraint resolution
-  scaffold/       # Registry repo scaffolding
+  scaffold/       # Registry repo scaffolding, templates, local index I/O, name validation
   types/          # Shared type definitions (ItemType)
   ui/             # Terminal output formatting (colors, tables)
   vcs/            # VCS backend detection (Git vs Sapling)
@@ -42,6 +42,8 @@ internal/
 - **Self-hosted registries**: Any repo can be its own registry — this repo ships an `amaru-usage` skill via `amaru_registry.json` + `.amaru_registry/skills/amaru-usage/`.
 - **DependencySpec**: Marshals as shorthand string when only version is set, full object when registry or group is present.
 - **Lock entries**: Store resolved version, registry alias, content hash, and timestamp.
+- **Registry management**: `amaru repo` subcommands modify `amaru_registry.json` and `.amaru_registry/` contents. The index file is the source of truth for what's published; git tags are the source of truth for versions. All `repo` commands require CWD to contain `amaru_registry.json`.
+- **Documentation sync**: When adding or changing CLI commands, always update README.md, AGENTS.md, CLAUDE.md, and the `amaru-usage` skill to reflect new capabilities.
 
 ## Testing Patterns
 

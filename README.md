@@ -346,6 +346,8 @@ Creating registry at /path/to/registry...
 
 The generated structure includes `AGENTS.md` navigation files and a per-project context directory with `brainstorms/`, `plans/`, and `solutions/` subdirectories.
 
+After scaffolding, use `amaru repo add` to create items and `amaru repo tag` to version them.
+
 ## Authentication
 
 amaru supports three auth methods per registry:
@@ -453,6 +455,94 @@ To get automatic update warnings when you start a Claude Code session, add a hoo
 if [ -f "amaru.json" ]; then
   amaru check --quiet 2>/dev/null
 fi
+```
+
+## Registry Management
+
+Manage items in a registry repository with `amaru repo` subcommands. These commands operate on the local registry (the directory containing `amaru_registry.json`).
+
+### `amaru repo add <name> [--type skill|command|agent|skillset]`
+
+Create a new item in the registry with template files and update the index.
+
+```bash
+$ amaru repo add research
+  ✓ Created skill "research"
+  Directory: .amaru_registry/skills/research/
+  Content:   .amaru_registry/skills/research/skill.md
+
+$ amaru repo add deploy --type command -d "Deploy to production"
+  ✓ Created command "deploy"
+
+$ amaru repo add starter-pack --type skillset --items "skill/research,command/deploy"
+  ✓ Created skillset "starter-pack" with 2 items
+```
+
+### `amaru repo remove <name> [--type skill|command|agent|skillset] [--force]`
+
+Remove an item from the registry index and delete its files. Blocks if the item is referenced by a skillset (use `--force` to override).
+
+```bash
+$ amaru repo remove old-skill
+  ✓ Removed skill "old-skill" from registry
+```
+
+### `amaru repo list [--type skill|command|agent|skillset] [--json]`
+
+List all items in the local registry, grouped by type.
+
+```bash
+$ amaru repo list
+Skills (2)
+  research     v1.2.0   Tools for deep codebase research
+  amaru-usage  latest   How to use amaru CLI
+
+Commands (0)
+
+Agents (0)
+
+Skillsets (0)
+```
+
+### `amaru repo validate`
+
+Check registry consistency — verifies the index matches the filesystem, manifests are valid, and skillset members exist. Exits non-zero on errors (for CI).
+
+```bash
+$ amaru repo validate
+Validating registry at .
+  ✓ skills/research — OK
+  ✗ skills/broken — manifest.json not found
+  ! skills/orphan — orphaned directory (not in index)
+
+Errors: 1  Warnings: 1  OK: 1
+```
+
+### `amaru repo tag <name> <version> [--type skill|command|agent] [--push]`
+
+Tag a new version of an item — updates `manifest.json` and the index, then creates an annotated git tag.
+
+```bash
+$ amaru repo tag research 1.0.0
+  ✓ Tagged skill "research" as v1.0.0
+  Tag: skill/research/1.0.0
+
+  To push: git push --follow-tags
+```
+
+### `amaru repo info <name> [--type skill|command|agent]`
+
+Show detailed information about a specific item in the registry.
+
+```bash
+$ amaru repo info research
+Name:        research
+Type:        skill
+Version:     latest (unversioned)
+Description: Tools for deep codebase research
+Author:      barelias
+Tags:        research, tooling
+Files:       skill.md
 ```
 
 ## Self-Hosted Registry

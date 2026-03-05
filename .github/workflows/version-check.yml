@@ -1,0 +1,44 @@
+name: Version Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "*.go"
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+
+permissions:
+  contents: read
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version bump
+        run: |
+          BASE_BRANCH="${{ github.event.pull_request.base.ref }}"
+          git fetch origin "$BASE_BRANCH" --quiet
+
+          # Extract version from current PR
+          PR_VERSION=$(grep -oP 'const version = "\K[^"]+' cmd/root.go)
+
+          # Extract version from base branch
+          BASE_VERSION=$(git show "origin/$BASE_BRANCH:cmd/root.go" | grep -oP 'const version = "\K[^"]+')
+
+          echo "Base version: $BASE_VERSION"
+          echo "PR version:   $PR_VERSION"
+
+          if [ "$PR_VERSION" = "$BASE_VERSION" ]; then
+            echo "::error::Version in cmd/root.go has not been updated."
+            echo "Please bump the version constant before merging."
+            echo "Current version: $BASE_VERSION"
+            exit 1
+          fi
+
+          echo "Version bumped from $BASE_VERSION to $PR_VERSION."

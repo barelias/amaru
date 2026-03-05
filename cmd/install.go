@@ -136,6 +136,12 @@ func resolveVersion(ctx context.Context, client registry.Client, itemType, name,
 		return "", fmt.Errorf("listing versions: %w", err)
 	}
 
+	// No tags found — registry doesn't use per-item version tags.
+	// Return empty so DownloadFiles fetches from default branch.
+	if len(versions) == 0 {
+		return "", nil
+	}
+
 	best, err := resolver.Resolve(constraint, versions)
 	if err != nil {
 		return "", err

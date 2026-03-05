@@ -125,6 +125,84 @@ func TestNewAuthenticator(t *testing.T) {
 	}
 }
 
+func TestSkillsetManifestToSkillsetItems(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest SkillsetManifest
+		want     int
+	}{
+		{
+			name: "skills only",
+			manifest: SkillsetManifest{
+				Skills: []string{"research", "plan"},
+			},
+			want: 2,
+		},
+		{
+			name: "mixed types",
+			manifest: SkillsetManifest{
+				Skills:   []string{"research"},
+				Commands: []string{"bootstrap"},
+				Agents:   []string{"coder"},
+			},
+			want: 3,
+		},
+		{
+			name: "empty manifest",
+			manifest: SkillsetManifest{},
+			want:     0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items := tt.manifest.ToSkillsetItems()
+			if len(items) != tt.want {
+				t.Errorf("got %d items, want %d", len(items), tt.want)
+			}
+
+			// Verify types are correct
+			for _, item := range items {
+				switch item.Type {
+				case "skill", "command", "agent":
+					// ok
+				default:
+					t.Errorf("unexpected item type: %s", item.Type)
+				}
+			}
+		})
+	}
+}
+
+func TestSkillsetManifestPreservesOrder(t *testing.T) {
+	m := SkillsetManifest{
+		Skills:   []string{"a-skill", "b-skill"},
+		Commands: []string{"a-cmd"},
+		Agents:   []string{"a-agent"},
+	}
+	items := m.ToSkillsetItems()
+
+	// Skills come first, then commands, then agents
+	expected := []struct {
+		typ  string
+		name string
+	}{
+		{"skill", "a-skill"},
+		{"skill", "b-skill"},
+		{"command", "a-cmd"},
+		{"agent", "a-agent"},
+	}
+
+	if len(items) != len(expected) {
+		t.Fatalf("got %d items, want %d", len(items), len(expected))
+	}
+	for i, e := range expected {
+		if items[i].Type != e.typ || items[i].Name != e.name {
+			t.Errorf("item[%d] = %s/%s, want %s/%s", i, items[i].Type, items[i].Name, e.typ, e.name)
+		}
+	}
+}
+
 func TestRegistryIndexEntriesForType(t *testing.T) {
 	idx := &RegistryIndex{
 		Skills:   map[string]RegistryEntry{"research": {Latest: "1.0.0"}},

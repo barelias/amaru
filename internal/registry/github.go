@@ -172,6 +172,7 @@ func (c *GitHubClient) FetchIndex(ctx context.Context) (*RegistryIndex, error) {
 }
 
 // ListVersions returns all available versions for an item by listing git tags.
+// Returns an empty list (not an error) if the registry has no tags for this item.
 func (c *GitHubClient) ListVersions(ctx context.Context, itemType, name string) ([]*semver.Version, error) {
 	// Tag format: skill/research/1.0.0 or command/dev/bootstrap/2.0.0
 	prefix := itemType + "/" + name + "/"
@@ -180,14 +181,15 @@ func (c *GitHubClient) ListVersions(ctx context.Context, itemType, name string) 
 	path := fmt.Sprintf("git/matching-refs/tags/%s", prefix)
 	body, err := c.apiRequest(ctx, path)
 	if err != nil {
-		return nil, fmt.Errorf("listing versions for %s/%s: %w", itemType, name, err)
+		// No tags is normal for registries that don't use per-item version tags
+		return nil, nil
 	}
 
 	var refs []struct {
 		Ref string `json:"ref"`
 	}
 	if err := json.Unmarshal(body, &refs); err != nil {
-		return nil, fmt.Errorf("parsing tag refs: %w", err)
+		return nil, nil // Treat parse failures as "no versions"
 	}
 
 	var versions []*semver.Version
@@ -206,18 +208,15 @@ func (c *GitHubClient) ListVersions(ctx context.Context, itemType, name string) 
 	return versions, nil
 }
 
-// DownloadFiles downloads all files for a specific version.
-// If version is empty, downloads from the default branch.
+// DownloadFiles downloads all files for a specific item.
+// Always downloads from the default branch — the version parameter is recorded
+// in the lock file for tracking but not used as a git ref, since registries
+// are monorepos that don't necessarily use per-item version tags.
 func (c *GitHubClient) DownloadFiles(ctx context.Context, itemType, name, version string) ([]File, error) {
-	ref := ""
-	if version != "" {
-		ref = fmt.Sprintf("%s/%s/%s", itemType, name, version)
-	}
-
 	// Determine the directory path in the repo (.amaru_registry/ prefix)
 	dirPath := ".amaru_registry/" + types.ItemType(itemType).DirName() + "/" + name
 
-	return c.downloadDirectory(ctx, dirPath, ref, "")
+	return c.downloadDirectory(ctx, dirPath, "", "")
 }
 
 // FetchSkillsetManifest downloads the manifest.json for a skillset from the registry.

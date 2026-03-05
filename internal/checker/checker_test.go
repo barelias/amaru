@@ -27,7 +27,8 @@ func (m *mockRegistryClient) ListVersions(ctx context.Context, itemType, name st
 	key := itemType + "/" + name
 	vs, ok := m.versions[key]
 	if !ok {
-		return nil, fmt.Errorf("not found: %s", key)
+		// Simulate tag-less registry: return nil, nil (no error, no versions)
+		return nil, nil
 	}
 	return vs, nil
 }
@@ -306,6 +307,48 @@ func TestCheckLatestConstraintDetectsDrift(t *testing.T) {
 	}
 	if result.Drifts[0].Version != "latest" {
 		t.Errorf("expected version latest in drift, got %s", result.Drifts[0].Version)
+	}
+}
+
+func TestCheckTaglessRegistryNoUpdate(t *testing.T) {
+	// Simulates a registry that doesn't use per-item version tags.
+	// ListVersions returns empty, so no update should be reported.
+	m := &manifest.Manifest{
+		Version: "1.0.0",
+		Registries: map[string]manifest.RegistryConfig{
+			"main": {URL: "github:acme/skills", Auth: "none"},
+		},
+		Skills: map[string]manifest.DependencySpec{
+			"research": {Version: "^1.0.0"},
+		},
+	}
+
+	lock := &manifest.Lock{
+		Skills: map[string]manifest.LockedEntry{
+			"research": {Version: "1.0.0", Registry: "main", Hash: "abc123"},
+		},
+		Commands:  map[string]manifest.LockedEntry{},
+		Agents:    map[string]manifest.LockedEntry{},
+		Skillsets: map[string]manifest.LockedSkillset{},
+	}
+
+	// No versions registered — simulates a tag-less registry
+	client := &mockRegistryClient{
+		versions: map[string][]*semver.Version{},
+	}
+
+	clients := map[string]registry.Client{"main": client}
+
+	result, err := Check(context.Background(), t.TempDir(), m, lock, clients)
+	if err != nil {
+		t.Fatalf("Check error: %v", err)
+	}
+	// With no tags, we can't determine if there's an update, so item is up-to-date
+	if len(result.Updates) != 0 {
+		t.Errorf("expected 0 updates for tag-less registry, got %d", len(result.Updates))
+	}
+	if result.UpToDate != 1 {
+		t.Errorf("expected 1 up-to-date, got %d", result.UpToDate)
 	}
 }
 

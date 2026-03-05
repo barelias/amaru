@@ -263,6 +263,25 @@ func updateItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock, 
 		return false, fmt.Errorf("listing versions: %w", err)
 	}
 
+	// No tags found — registry doesn't use per-item version tags.
+	// Re-download from default branch and compare hash (same as "latest" path).
+	if len(versions) == 0 {
+		files, err := client.DownloadFiles(ctx, itemType, name, "")
+		if err != nil {
+			return false, fmt.Errorf("downloading: %w", err)
+		}
+		hash, err := installer.Install(".", itemType, name, files)
+		if err != nil {
+			return false, fmt.Errorf("installing: %w", err)
+		}
+		if hash != locked.Hash {
+			lockEntries[name] = manifest.NewLockedEntry(locked.Version, regAlias, hash)
+			ui.Check("Updating %s — content changed [%s]", name, regAlias)
+			return true, nil
+		}
+		return false, nil
+	}
+
 	currentV, err := semver.NewVersion(locked.Version)
 	if err != nil {
 		return false, err

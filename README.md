@@ -10,12 +10,18 @@ amaru connects your projects to centralized registries hosted on GitHub — mana
 
 ## Install
 
-**From GitHub Releases** (prebuilt binaries for Linux, macOS, Windows):
+**Quick install** (Linux/macOS):
 
 ```bash
-# Download the latest release for your platform from:
-# https://github.com/barelias/amaru/releases
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')
+curl -fsSL "https://github.com/barelias/amaru/releases/latest/download/amaru_${OS}_${ARCH}.tar.gz" | tar xz
+sudo mv amaru /usr/local/bin/
 ```
+
+**From GitHub Releases** (all platforms including Windows):
+
+Download the binary for your platform from [github.com/barelias/amaru/releases](https://github.com/barelias/amaru/releases).
 
 **With Go:**
 

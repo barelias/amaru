@@ -40,10 +40,13 @@ type RegistryEntry struct {
 
 // SkillsetEntry is a named group of skills/commands/agents in the registry index.
 // Skillsets expand to individual items on install (VS Code Extension Pack pattern).
+// Items may be inline in the index, or stored in a separate manifest.json file
+// under .amaru_registry/skillsets/<name>/manifest.json.
 type SkillsetEntry struct {
+	Latest      string         `json:"latest,omitempty"`
 	Description string         `json:"description"`
 	Tags        []string       `json:"tags,omitempty"`
-	Items       []SkillsetItem `json:"items"`
+	Items       []SkillsetItem `json:"items,omitempty"`
 }
 
 // SkillsetItem is one member of a skillset.
@@ -71,6 +74,33 @@ type ChangelogEntry struct {
 	Note    string `json:"note"`
 }
 
+// SkillsetManifest is the manifest.json inside a skillset directory in the registry.
+// It lists members by type using string arrays (e.g., "skills": ["foo", "bar"]).
+type SkillsetManifest struct {
+	Name        string   `json:"name"`
+	Version     string   `json:"version"`
+	Description string   `json:"description"`
+	Type        string   `json:"type"`
+	Skills      []string `json:"skills,omitempty"`
+	Commands    []string `json:"commands,omitempty"`
+	Agents      []string `json:"agents,omitempty"`
+}
+
+// ToSkillsetItems converts the manifest's member lists into []SkillsetItem.
+func (m *SkillsetManifest) ToSkillsetItems() []SkillsetItem {
+	var items []SkillsetItem
+	for _, name := range m.Skills {
+		items = append(items, SkillsetItem{Type: "skill", Name: name})
+	}
+	for _, name := range m.Commands {
+		items = append(items, SkillsetItem{Type: "command", Name: name})
+	}
+	for _, name := range m.Agents {
+		items = append(items, SkillsetItem{Type: "agent", Name: name})
+	}
+	return items
+}
+
 // File represents a downloaded file from the registry.
 type File struct {
 	Path    string // Relative path within the skill/command directory
@@ -88,4 +118,8 @@ type Client interface {
 
 	// DownloadFiles downloads all files for a specific version of an item.
 	DownloadFiles(ctx context.Context, itemType, name, version string) ([]File, error)
+
+	// FetchSkillsetManifest downloads and parses the manifest.json for a skillset.
+	// This is used when the index doesn't include inline items.
+	FetchSkillsetManifest(ctx context.Context, name, version string) (*SkillsetManifest, error)
 }

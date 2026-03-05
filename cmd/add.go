@@ -162,8 +162,16 @@ func runAddSkillset(ctx context.Context, name, regAlias string, m *manifest.Mani
 		return fmt.Errorf("skillset %q not found in registry %q", name, regAlias)
 	}
 
+	// If items aren't inline in the index, fetch from the skillset's manifest.json
 	if len(skillset.Items) == 0 {
-		return fmt.Errorf("skillset %q has no items", name)
+		ssManifest, err := client.FetchSkillsetManifest(ctx, name, skillset.Latest)
+		if err != nil {
+			return fmt.Errorf("skillset %q has no inline items and manifest fetch failed: %w", name, err)
+		}
+		skillset.Items = ssManifest.ToSkillsetItems()
+		if len(skillset.Items) == 0 {
+			return fmt.Errorf("skillset %q has no items", name)
+		}
 	}
 
 	// Validate all member types (reject nested skillsets)

@@ -41,6 +41,10 @@ func (m *mockRegistryClient) DownloadFiles(ctx context.Context, itemType, name, 
 	return fs, nil
 }
 
+func (m *mockRegistryClient) FetchSkillsetManifest(ctx context.Context, name, version string) (*registry.SkillsetManifest, error) {
+	return nil, fmt.Errorf("not implemented in mock")
+}
+
 func semverList(strs ...string) []*semver.Version {
 	var vs []*semver.Version
 	for _, s := range strs {

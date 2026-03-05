@@ -220,6 +220,27 @@ func (c *GitHubClient) DownloadFiles(ctx context.Context, itemType, name, versio
 	return c.downloadDirectory(ctx, dirPath, ref, "")
 }
 
+// FetchSkillsetManifest downloads the manifest.json for a skillset from the registry.
+func (c *GitHubClient) FetchSkillsetManifest(ctx context.Context, name, version string) (*SkillsetManifest, error) {
+	ref := ""
+	if version != "" {
+		ref = fmt.Sprintf("skillset/%s/%s", name, version)
+	}
+
+	filePath := ".amaru_registry/skillsets/" + name + "/manifest.json"
+	data, err := c.getFileContent(ctx, filePath, ref)
+	if err != nil {
+		return nil, fmt.Errorf("fetching skillset manifest for %q: %w", name, err)
+	}
+
+	var m SkillsetManifest
+	if err := json.Unmarshal(data, &m); err != nil {
+		return nil, fmt.Errorf("parsing skillset manifest for %q: %w", name, err)
+	}
+
+	return &m, nil
+}
+
 // downloadDirectory recursively downloads all files in a directory at a given ref.
 func (c *GitHubClient) downloadDirectory(ctx context.Context, dirPath, ref, relativeBase string) ([]File, error) {
 	path := fmt.Sprintf("contents/%s", dirPath)

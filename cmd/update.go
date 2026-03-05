@@ -115,6 +115,15 @@ func runUpdateSkillset(ctx context.Context, ssName string, m *manifest.Manifest,
 		return fmt.Errorf("skillset %q no longer exists in registry %q", ssName, lockedSS.Registry)
 	}
 
+	// If items aren't inline in the index, fetch from the skillset's manifest.json
+	if len(remoteSS.Items) == 0 {
+		ssManifest, err := client.FetchSkillsetManifest(ctx, ssName, remoteSS.Latest)
+		if err != nil {
+			return fmt.Errorf("skillset %q has no inline items and manifest fetch failed: %w", ssName, err)
+		}
+		remoteSS.Items = ssManifest.ToSkillsetItems()
+	}
+
 	fmt.Printf("Updating skillset %q (%d members)...\n", ssName, len(remoteSS.Items))
 
 	updated := 0

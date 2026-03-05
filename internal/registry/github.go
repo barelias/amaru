@@ -221,14 +221,11 @@ func (c *GitHubClient) DownloadFiles(ctx context.Context, itemType, name, versio
 }
 
 // FetchSkillsetManifest downloads the manifest.json for a skillset from the registry.
-func (c *GitHubClient) FetchSkillsetManifest(ctx context.Context, name, version string) (*SkillsetManifest, error) {
-	ref := ""
-	if version != "" {
-		ref = fmt.Sprintf("skillset/%s/%s", name, version)
-	}
-
+// Always fetches from the default branch — skillsets are metadata that reference
+// individually versioned items, so they don't have their own version tags.
+func (c *GitHubClient) FetchSkillsetManifest(ctx context.Context, name, _ string) (*SkillsetManifest, error) {
 	filePath := ".amaru_registry/skillsets/" + name + "/manifest.json"
-	data, err := c.getFileContent(ctx, filePath, ref)
+	data, err := c.getFileContent(ctx, filePath, "")
 	if err != nil {
 		return nil, fmt.Errorf("fetching skillset manifest for %q: %w", name, err)
 	}

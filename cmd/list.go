@@ -50,6 +50,14 @@ func runList(ctx context.Context) error {
 		}
 	}
 
+	// Build a reverse map: item "type/name" → skillset name
+	skillsetMembership := make(map[string]string)
+	for ssName, ss := range lock.Skillsets {
+		for _, member := range ss.Members {
+			skillsetMembership[member] = ssName
+		}
+	}
+
 	hasItems := false
 	for _, itemType := range types.AllInstallableTypes() {
 		entries := lock.EntriesForType(itemType)
@@ -64,15 +72,23 @@ func runList(ctx context.Context) error {
 					displayVersion = "latest"
 				}
 				origin := fmt.Sprintf("[%s]", entry.Registry)
-				// Show group provenance if present in manifest
-				if deps := m.DepsForType(itemType); deps != nil {
-					if spec, ok := deps[name]; ok && spec.Group != "" {
-						origin += fmt.Sprintf(" (via %s)", spec.Group)
-					}
+				// Show skillset provenance from lock membership
+				memberKey := fmt.Sprintf("%s/%s", itemType, name)
+				if ssName, ok := skillsetMembership[memberKey]; ok {
+					origin += fmt.Sprintf(" (via %s)", ssName)
 				}
 				rows = append(rows, []string{name, displayVersion, status, origin})
 			}
 			ui.Table(rows)
+		}
+	}
+
+	// Show skillsets
+	if len(lock.Skillsets) > 0 {
+		hasItems = true
+		ui.Header("Skillsets:")
+		for name, ss := range lock.Skillsets {
+			fmt.Printf("  %s [%s] (%d members)\n", name, ss.Registry, len(ss.Members))
 		}
 	}
 

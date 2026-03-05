@@ -64,32 +64,111 @@ func TestDependencySpecMarshalFullForm(t *testing.T) {
 	}
 }
 
-func TestDependencySpecWithGroup(t *testing.T) {
-	// Full form with group should marshal as object
-	spec := DependencySpec{Version: "^1.0.0", Group: "starter-pack"}
+func TestSkillsetSpecMarshalShorthand(t *testing.T) {
+	spec := SkillsetSpec{Version: "^1.0.0"}
 	data, err := json.Marshal(spec)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Should be an object, not a string
-	var result map[string]string
-	if err := json.Unmarshal(data, &result); err != nil {
-		t.Fatalf("expected object form for spec with group, got: %s", string(data))
+	if string(data) != `"^1.0.0"` {
+		t.Errorf("expected shorthand marshal, got %s", string(data))
 	}
-	if result["version"] != "^1.0.0" {
-		t.Errorf("expected version ^1.0.0, got %s", result["version"])
-	}
-	if result["group"] != "starter-pack" {
-		t.Errorf("expected group starter-pack, got %s", result["group"])
-	}
+}
 
-	// Round-trip: unmarshal the full form back
-	var loaded DependencySpec
-	if err := json.Unmarshal(data, &loaded); err != nil {
+func TestSkillsetSpecMarshalFullForm(t *testing.T) {
+	spec := SkillsetSpec{Version: "^1.0.0", Registry: "main"}
+	data, err := json.Marshal(spec)
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if loaded.Group != "starter-pack" {
-		t.Errorf("expected group starter-pack after round-trip, got %s", loaded.Group)
+	var result map[string]string
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatalf("expected object form, got: %s", string(data))
+	}
+	if result["version"] != "^1.0.0" || result["registry"] != "main" {
+		t.Errorf("unexpected full form: %s", string(data))
+	}
+}
+
+func TestSkillsetSpecRoundTrip(t *testing.T) {
+	// Shorthand
+	input := `"^1.0.0"`
+	var spec SkillsetSpec
+	if err := json.Unmarshal([]byte(input), &spec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Version != "^1.0.0" || spec.Registry != "" {
+		t.Errorf("unexpected spec: %+v", spec)
+	}
+
+	// Full form
+	input = `{"version": "^2.0.0", "registry": "platform"}`
+	if err := json.Unmarshal([]byte(input), &spec); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.Version != "^2.0.0" || spec.Registry != "platform" {
+		t.Errorf("unexpected spec: %+v", spec)
+	}
+}
+
+func TestSetSkillset(t *testing.T) {
+	m := &Manifest{
+		Version:    "1.0.0",
+		Registries: map[string]RegistryConfig{"main": {URL: "github:a/b", Auth: "none"}},
+	}
+
+	m.SetSkillset("starter-pack", SkillsetSpec{Version: "^1.0.0"})
+	if m.Skillsets == nil {
+		t.Fatal("expected non-nil Skillsets")
+	}
+	if m.Skillsets["starter-pack"].Version != "^1.0.0" {
+		t.Errorf("expected ^1.0.0, got %s", m.Skillsets["starter-pack"].Version)
+	}
+}
+
+func TestManifestWithSkillsetsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	m := &Manifest{
+		Version:    "1.0.0",
+		Registries: map[string]RegistryConfig{"main": {URL: "github:a/b", Auth: "none"}},
+		Skillsets:  map[string]SkillsetSpec{"starter-pack": {Version: "^1.0.0"}},
+	}
+
+	if err := Save(dir, m); err != nil {
+		t.Fatalf("Save error: %v", err)
+	}
+
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load error: %v", err)
+	}
+	if loaded.Skillsets["starter-pack"].Version != "^1.0.0" {
+		t.Errorf("expected ^1.0.0, got %s", loaded.Skillsets["starter-pack"].Version)
+	}
+}
+
+func TestOldManifestWithGroupFieldStillLoads(t *testing.T) {
+	// Old manifests with "group" field should still load (field is silently ignored)
+	dir := t.TempDir()
+	content := `{
+  "version": "1.0.0",
+  "registries": {
+    "main": { "url": "github:acme-org/acme-skills", "auth": "none" }
+  },
+  "skills": {
+    "research": { "version": "^1.0.0", "group": "starter-pack" }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, ManifestFile), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := Load(dir)
+	if err != nil {
+		t.Fatalf("unexpected error loading old manifest: %v", err)
+	}
+	if m.Skills["research"].Version != "^1.0.0" {
+		t.Errorf("expected ^1.0.0, got %s", m.Skills["research"].Version)
 	}
 }
 

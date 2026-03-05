@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/barelias/amaru/internal/installer"
 	"github.com/barelias/amaru/internal/manifest"
@@ -55,6 +56,16 @@ func runInstall(ctx context.Context) error {
 				if err := installItem(ctx, m, lock, clients, string(itemType), name, spec, lockEntries); err != nil {
 					return fmt.Errorf("%s %s: %w", itemType, name, err)
 				}
+			}
+		}
+	}
+
+	// Install skillsets
+	if len(m.Skillsets) > 0 {
+		ui.Header("Installing skillsets...")
+		for name, spec := range m.Skillsets {
+			if err := installSkillset(ctx, name, spec, m, lock, clients); err != nil {
+				return fmt.Errorf("skillset %s: %w", name, err)
 			}
 		}
 	}
@@ -122,6 +133,122 @@ func installItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock,
 		displayVersion = "latest"
 	}
 	ui.Check("%s@%s (%s)", name, displayVersion, regAlias)
+	return nil
+}
+
+func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpec, m *manifest.Manifest, lock *manifest.Lock, clients map[string]registry.Client) error {
+	regAlias, err := m.ResolveSkillsetRegistry(spec)
+	if err != nil {
+		return err
+	}
+
+	client, ok := clients[regAlias]
+	if !ok {
+		return fmt.Errorf("no client for registry %q", regAlias)
+	}
+
+	// Check if already fully installed (all members in lock)
+	if !installForce {
+		if lockedSS, ok := lock.Skillsets[name]; ok {
+			allInstalled := true
+			for _, member := range lockedSS.Members {
+				parts := strings.SplitN(member, "/", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				if !installer.IsInstalled(".", parts[0], parts[1]) {
+					allInstalled = false
+					break
+				}
+			}
+			if allInstalled {
+				ui.Check("skillset %s (%d members) — already installed", name, len(lockedSS.Members))
+				return nil
+			}
+		}
+	}
+
+	idx, err := client.FetchIndex(ctx)
+	if err != nil {
+		return fmt.Errorf("fetching registry index: %w", err)
+	}
+
+	skillset, found := idx.Skillsets[name]
+	if !found {
+		return fmt.Errorf("skillset %q not found in registry %q", name, regAlias)
+	}
+
+	// Resolve items from manifest if not inline
+	if len(skillset.Items) == 0 {
+		ssManifest, err := client.FetchSkillsetManifest(ctx, name, skillset.Latest)
+		if err != nil {
+			return fmt.Errorf("fetching skillset manifest: %w", err)
+		}
+		skillset.Items = ssManifest.ToSkillsetItems()
+	}
+
+	var digestItems []string
+	var memberList []string
+	for _, item := range skillset.Items {
+		itemType := types.ItemType(item.Type)
+		entries := idx.EntriesForType(itemType)
+		entry, ok := entries[item.Name]
+		if !ok {
+			ui.Warn("  %s %q not found in registry, skipping", item.Type, item.Name)
+			continue
+		}
+
+		version := entry.Latest
+		lockEntries := lock.EntriesForType(itemType)
+
+		// Skip if already installed (unless --force)
+		if !installForce {
+			if _, hasLock := lockEntries[item.Name]; hasLock {
+				if installer.IsInstalled(".", item.Type, item.Name) {
+					lockVersion := version
+					if lockVersion == "" {
+						lockVersion = "latest"
+					}
+					digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s", item.Type, item.Name, lockVersion))
+					memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+					continue
+				}
+			}
+		}
+
+		files, err := client.DownloadFiles(ctx, item.Type, item.Name, version)
+		if err != nil {
+			return fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
+		}
+
+		hash, err := installer.Install(".", item.Type, item.Name, files)
+		if err != nil {
+			return fmt.Errorf("installing %s %q: %w", item.Type, item.Name, err)
+		}
+
+		lockVersion := version
+		if lockVersion == "" {
+			lockVersion = "latest"
+		}
+		lockEntries[item.Name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
+
+		digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s", item.Type, item.Name, lockVersion))
+		memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+
+		displayVersion := version
+		if displayVersion == "" {
+			displayVersion = "latest"
+		}
+		ui.Check("  %s %s@%s", item.Type, item.Name, displayVersion)
+	}
+
+	lock.Skillsets[name] = manifest.LockedSkillset{
+		Registry:    regAlias,
+		Digest:      manifest.SkillsetDigest(digestItems),
+		Members:     memberList,
+		InstalledAt: "",
+	}
+
 	return nil
 }
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/barelias/amaru/internal/installer"
 	"github.com/barelias/amaru/internal/manifest"
@@ -57,6 +58,13 @@ func runUpdate(ctx context.Context, filterName string) error {
 		return runUpdateSkillset(ctx, updateSkillset, m, lock, clients)
 	}
 
+	// If filterName matches a skillset, delegate to skillset update
+	if filterName != "" {
+		if _, isSkillset := m.Skillsets[filterName]; isSkillset {
+			return runUpdateSkillset(ctx, filterName, m, lock, clients)
+		}
+	}
+
 	updated := 0
 
 	for _, itemType := range types.AllInstallableTypes() {
@@ -92,69 +100,77 @@ func runUpdate(ctx context.Context, filterName string) error {
 }
 
 func runUpdateSkillset(ctx context.Context, ssName string, m *manifest.Manifest, lock *manifest.Lock, clients map[string]registry.Client) error {
-	// Look up the locked skillset
-	lockedSS, ok := lock.Skillsets[ssName]
-	if !ok {
-		return fmt.Errorf("skillset %q not found in lock file. Run 'amaru add %s --type=skillset' first", ssName, ssName)
+	// Source of truth is now the manifest
+	ssSpec, inManifest := m.Skillsets[ssName]
+	if !inManifest {
+		return fmt.Errorf("skillset %q not found in manifest. Run 'amaru add %s --type=skillset' first", ssName, ssName)
 	}
 
-	client, ok := clients[lockedSS.Registry]
-	if !ok {
-		return fmt.Errorf("no client for registry %q", lockedSS.Registry)
+	regAlias, err := m.ResolveSkillsetRegistry(ssSpec)
+	if err != nil {
+		return err
 	}
 
-	// Fetch current registry index to get latest member definitions
+	client, ok := clients[regAlias]
+	if !ok {
+		return fmt.Errorf("no client for registry %q", regAlias)
+	}
+
+	// Fetch current registry index
 	idx, err := client.FetchIndex(ctx)
 	if err != nil {
 		return fmt.Errorf("fetching registry index: %w", err)
 	}
 
-	// Check if the skillset still exists in the registry
 	remoteSS, exists := idx.Skillsets[ssName]
 	if !exists {
-		return fmt.Errorf("skillset %q no longer exists in registry %q", ssName, lockedSS.Registry)
+		return fmt.Errorf("skillset %q no longer exists in registry %q", ssName, regAlias)
 	}
 
-	// If items aren't inline in the index, fetch from the skillset's manifest.json
+	// Resolve items from manifest if not inline
 	if len(remoteSS.Items) == 0 {
 		ssManifest, err := client.FetchSkillsetManifest(ctx, ssName, remoteSS.Latest)
 		if err != nil {
-			return fmt.Errorf("skillset %q has no inline items and manifest fetch failed: %w", ssName, err)
+			return fmt.Errorf("fetching skillset manifest: %w", err)
 		}
 		remoteSS.Items = ssManifest.ToSkillsetItems()
 	}
 
-	fmt.Printf("Updating skillset %q (%d members)...\n", ssName, len(remoteSS.Items))
+	// Build set of remote members for diffing
+	remoteMembers := make(map[string]bool)
+	for _, item := range remoteSS.Items {
+		remoteMembers[fmt.Sprintf("%s/%s", item.Type, item.Name)] = true
+	}
+
+	// Build set of current locked members
+	lockedSS := lock.Skillsets[ssName]
+	localMembers := make(map[string]bool)
+	for _, member := range lockedSS.Members {
+		localMembers[member] = true
+	}
+
+	fmt.Printf("Updating skillset %q...\n", ssName)
 
 	updated := 0
 	added := 0
+	removed := 0
 
-	// Update existing members and add new ones
+	// Install new members and update existing ones
 	for _, item := range remoteSS.Items {
 		itemType := types.ItemType(item.Type)
-		spec, inManifest := m.DepsForType(itemType)[item.Name]
+		memberKey := fmt.Sprintf("%s/%s", item.Type, item.Name)
+		lockEntries := lock.EntriesForType(itemType)
 
-		if !inManifest {
-			// New member added to skillset — add it
-			entries := idx.EntriesForType(itemType)
-			entry, ok := entries[item.Name]
-			if !ok {
-				ui.Warn("  %s %q not found in registry, skipping", item.Type, item.Name)
-				continue
-			}
+		entries := idx.EntriesForType(itemType)
+		entry, ok := entries[item.Name]
+		if !ok {
+			ui.Warn("  %s %q not found in registry, skipping", item.Type, item.Name)
+			continue
+		}
+		version := entry.Latest
 
-			version := entry.Latest
-			newSpec := manifest.DependencySpec{Group: ssName}
-			if version != "" {
-				newSpec.Version = "^" + version
-			} else {
-				newSpec.Version = "latest"
-			}
-			if len(m.Registries) > 1 {
-				newSpec.Registry = lockedSS.Registry
-			}
-			m.SetDep(itemType, item.Name, newSpec)
-
+		if !localMembers[memberKey] {
+			// New member — download and install
 			files, err := client.DownloadFiles(ctx, item.Type, item.Name, version)
 			if err != nil {
 				return fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
@@ -168,7 +184,7 @@ func runUpdateSkillset(ctx context.Context, ssName string, m *manifest.Manifest,
 			if lockVersion == "" {
 				lockVersion = "latest"
 			}
-			lock.EntriesForType(itemType)[item.Name] = manifest.NewLockedEntry(lockVersion, lockedSS.Registry, hash)
+			lockEntries[item.Name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
 			displayVersion := version
 			if displayVersion == "" {
 				displayVersion = "latest"
@@ -178,14 +194,50 @@ func runUpdateSkillset(ctx context.Context, ssName string, m *manifest.Manifest,
 			continue
 		}
 
-		// Existing member — update it
-		did, err := updateItem(ctx, m, lock, clients, item.Type, item.Name, spec, lock.EntriesForType(itemType))
-		if err != nil {
-			return fmt.Errorf("%s %s: %w", item.Type, item.Name, err)
+		// Existing member — re-download and compare hash
+		locked, hasLock := lockEntries[item.Name]
+		if !hasLock {
+			continue
 		}
-		if did {
+
+		files, err := client.DownloadFiles(ctx, item.Type, item.Name, version)
+		if err != nil {
+			return fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
+		}
+		hash, err := installer.Install(".", item.Type, item.Name, files)
+		if err != nil {
+			return fmt.Errorf("installing %s %q: %w", item.Type, item.Name, err)
+		}
+
+		if hash != locked.Hash {
+			lockVersion := version
+			if lockVersion == "" {
+				lockVersion = "latest"
+			}
+			lockEntries[item.Name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
+			ui.Check("  Updated %s %s — content changed", item.Type, item.Name)
 			updated++
 		}
+	}
+
+	// Remove members that are no longer in the remote skillset
+	for _, member := range lockedSS.Members {
+		if remoteMembers[member] {
+			continue
+		}
+		parts := strings.SplitN(member, "/", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		itemType, itemName := parts[0], parts[1]
+
+		if err := installer.Uninstall(".", itemType, itemName); err != nil {
+			ui.Warn("  Failed to remove %s %s: %v", itemType, itemName, err)
+			continue
+		}
+		delete(lock.EntriesForType(types.ItemType(itemType)), itemName)
+		ui.Check("  Removed %s %s (no longer in skillset)", itemType, itemName)
+		removed++
 	}
 
 	// Recompute skillset digest
@@ -200,25 +252,22 @@ func runUpdateSkillset(ctx context.Context, ssName string, m *manifest.Manifest,
 	}
 
 	lock.Skillsets[ssName] = manifest.LockedSkillset{
-		Registry:    lockedSS.Registry,
+		Registry:    regAlias,
 		Digest:      manifest.SkillsetDigest(digestItems),
 		Members:     memberList,
 		InstalledAt: lockedSS.InstalledAt,
 	}
 
-	if updated == 0 && added == 0 {
+	if updated == 0 && added == 0 && removed == 0 {
 		fmt.Printf("\nSkillset %q is up to date.\n", ssName)
 		return nil
 	}
 
-	if err := manifest.Save(".", m); err != nil {
-		return fmt.Errorf("saving manifest: %w", err)
-	}
 	if err := manifest.SaveLock(".", lock); err != nil {
 		return fmt.Errorf("saving lock file: %w", err)
 	}
 
-	fmt.Printf("\nSkillset %q: %d updated, %d added.\n", ssName, updated, added)
+	fmt.Printf("\nSkillset %q: %d updated, %d added, %d removed.\n", ssName, updated, added, removed)
 	return nil
 }
 

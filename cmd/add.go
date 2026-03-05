@@ -162,6 +162,13 @@ func runAddSkillset(ctx context.Context, name, regAlias string, m *manifest.Mani
 		return fmt.Errorf("skillset %q not found in registry %q", name, regAlias)
 	}
 
+	// Check if already in manifest
+	if m.Skillsets != nil {
+		if _, exists := m.Skillsets[name]; exists {
+			return fmt.Errorf("skillset %q already in manifest", name)
+		}
+	}
+
 	// If items aren't inline in the index, fetch from the skillset's manifest.json
 	if len(skillset.Items) == 0 {
 		ssManifest, err := client.FetchSkillsetManifest(ctx, name, skillset.Latest)
@@ -198,42 +205,29 @@ func runAddSkillset(ctx context.Context, name, regAlias string, m *manifest.Mani
 		return fmt.Errorf("skillset %q: members not found in registry: %s", name, strings.Join(missing, ", "))
 	}
 
+	// Add skillset reference to manifest (NOT individual items)
+	spec := manifest.SkillsetSpec{}
+	if skillset.Latest != "" {
+		spec.Version = "^" + skillset.Latest
+	} else {
+		spec.Version = "latest"
+	}
+	if len(m.Registries) > 1 {
+		spec.Registry = regAlias
+	}
+	m.SetSkillset(name, spec)
+
 	fmt.Printf("Installing skillset %q (%d items)...\n", name, len(skillset.Items))
 
-	added := 0
-	skipped := 0
+	// Download and install each member
+	var digestItems []string
+	var memberList []string
 	for _, item := range skillset.Items {
 		itemType := types.ItemType(item.Type)
-
-		// Skip if already in manifest
-		if deps := m.DepsForType(itemType); deps != nil {
-			if _, exists := deps[item.Name]; exists {
-				ui.Warn("%s %q already in manifest, skipping", item.Type, item.Name)
-				skipped++
-				continue
-			}
-		}
-
-		// Look up entry to get version
 		entries := idx.EntriesForType(itemType)
 		entry := entries[item.Name]
-
 		version := entry.Latest
-		spec := manifest.DependencySpec{
-			Group: name,
-		}
-		if version != "" {
-			spec.Version = "^" + version
-		} else {
-			spec.Version = "latest"
-		}
-		if len(m.Registries) > 1 {
-			spec.Registry = regAlias
-		}
 
-		m.SetDep(itemType, item.Name, spec)
-
-		// Download and install
 		files, err := client.DownloadFiles(ctx, item.Type, item.Name, version)
 		if err != nil {
 			return fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
@@ -250,24 +244,14 @@ func runAddSkillset(ctx context.Context, name, regAlias string, m *manifest.Mani
 		}
 		lock.EntriesForType(itemType)[item.Name] = manifest.NewLockedEntry(lockVersion, regAlias, hash)
 
+		digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s", item.Type, item.Name, lockVersion))
+		memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+
 		displayVersion := version
 		if displayVersion == "" {
 			displayVersion = "latest"
 		}
 		ui.Check("  %s %s@%s", item.Type, item.Name, displayVersion)
-		added++
-	}
-
-	// Compute skillset digest from member versions
-	var digestItems []string
-	var memberList []string
-	for _, item := range skillset.Items {
-		itemType := types.ItemType(item.Type)
-		lockEntries := lock.EntriesForType(itemType)
-		if le, ok := lockEntries[item.Name]; ok {
-			digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s", item.Type, item.Name, le.Version))
-		}
-		memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
 	}
 
 	// Record skillset in lock for change detection
@@ -286,11 +270,7 @@ func runAddSkillset(ctx context.Context, name, regAlias string, m *manifest.Mani
 		return fmt.Errorf("saving lock: %w", err)
 	}
 
-	fmt.Printf("\nSkillset %q: %d added", name, added)
-	if skipped > 0 {
-		fmt.Printf(", %d skipped (already installed)", skipped)
-	}
-	fmt.Println()
+	fmt.Printf("\nSkillset %q: %d items installed\n", name, len(skillset.Items))
 	if skillset.Description != "" {
 		fmt.Printf("  %s\n", skillset.Description)
 	}

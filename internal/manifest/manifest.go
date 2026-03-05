@@ -17,6 +17,7 @@ type Manifest struct {
 	Skills     map[string]DependencySpec `json:"skills,omitempty"`
 	Commands   map[string]DependencySpec `json:"commands,omitempty"`
 	Agents     map[string]DependencySpec `json:"agents,omitempty"`
+	Skillsets  map[string]SkillsetSpec   `json:"skillsets,omitempty"`
 	Context    *ContextConfig            `json:"context,omitempty"`
 	Ignored    []string                  `json:"ignored,omitempty"`
 }
@@ -37,7 +38,35 @@ type RegistryConfig struct {
 type DependencySpec struct {
 	Version  string `json:"version"`
 	Registry string `json:"registry,omitempty"`
-	Group    string `json:"group,omitempty"`
+}
+
+// SkillsetSpec handles both shorthand ("^1.0.0") and full form ({ "version": "^1.0.0", "registry": "main" }).
+type SkillsetSpec struct {
+	Version  string `json:"version"`
+	Registry string `json:"registry,omitempty"`
+}
+
+func (s *SkillsetSpec) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		s.Version = str
+		return nil
+	}
+	type alias SkillsetSpec
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return fmt.Errorf("invalid skillset spec: %s", string(data))
+	}
+	*s = SkillsetSpec(a)
+	return nil
+}
+
+func (s SkillsetSpec) MarshalJSON() ([]byte, error) {
+	if s.Registry == "" {
+		return json.Marshal(s.Version)
+	}
+	type alias SkillsetSpec
+	return json.Marshal(alias(s))
 }
 
 func (d *DependencySpec) UnmarshalJSON(data []byte) error {
@@ -60,7 +89,7 @@ func (d *DependencySpec) UnmarshalJSON(data []byte) error {
 }
 
 func (d DependencySpec) MarshalJSON() ([]byte, error) {
-	if d.Registry == "" && d.Group == "" {
+	if d.Registry == "" {
 		return json.Marshal(d.Version)
 	}
 	type alias DependencySpec
@@ -213,4 +242,27 @@ func (m *Manifest) HasDep(name string) bool {
 		}
 	}
 	return false
+}
+
+// SetSkillset adds or updates a skillset in the manifest.
+func (m *Manifest) SetSkillset(name string, spec SkillsetSpec) {
+	if m.Skillsets == nil {
+		m.Skillsets = make(map[string]SkillsetSpec)
+	}
+	m.Skillsets[name] = spec
+}
+
+// ResolveSkillsetRegistry returns the effective registry alias for a skillset spec.
+func (m *Manifest) ResolveSkillsetRegistry(spec SkillsetSpec) (string, error) {
+	if spec.Registry != "" {
+		if _, ok := m.Registries[spec.Registry]; !ok {
+			return "", fmt.Errorf("registry %q not found in manifest", spec.Registry)
+		}
+		return spec.Registry, nil
+	}
+	def := m.DefaultRegistry()
+	if def == "" {
+		return "", fmt.Errorf("registry must be specified when multiple registries are configured")
+	}
+	return def, nil
 }

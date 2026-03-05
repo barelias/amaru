@@ -3,6 +3,7 @@ package checker
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/barelias/amaru/internal/installer"
 	"github.com/barelias/amaru/internal/manifest"
@@ -67,6 +68,32 @@ func Check(ctx context.Context, projectDir string, m *manifest.Manifest, lock *m
 
 			if err := checkItem(ctx, result, string(itemType), name, regAlias, spec.Version, locked, client, projectDir, m.IsIgnored(name)); err != nil {
 				return nil, fmt.Errorf("checking %s %s: %w", itemType, name, err)
+			}
+		}
+	}
+
+	// Check skillset members from lock
+	for _, lockedSS := range lock.Skillsets {
+		client, ok := clients[lockedSS.Registry]
+		if !ok {
+			continue
+		}
+
+		for _, member := range lockedSS.Members {
+			parts := strings.SplitN(member, "/", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			itemType, itemName := parts[0], parts[1]
+
+			locked, hasLock := lock.EntriesForType(types.ItemType(itemType))[itemName]
+			if !hasLock {
+				continue
+			}
+
+			// Use "latest" constraint — skillset members are checked by drift only
+			if err := checkItem(ctx, result, itemType, itemName, lockedSS.Registry, "latest", locked, client, projectDir, m.IsIgnored(itemName)); err != nil {
+				return nil, fmt.Errorf("checking %s %s: %w", itemType, itemName, err)
 			}
 		}
 	}

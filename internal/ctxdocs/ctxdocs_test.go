@@ -262,8 +262,9 @@ func TestInit(t *testing.T) {
 
 func TestInitAlreadyInitialized(t *testing.T) {
 	dir := t.TempDir()
-	// Create the clone dir to simulate already initialized
-	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+	// Live checkout, but the symlink was deleted (the real-world failure: init
+	// used to refuse and sync didn't recreate — the channel stalled silently).
+	os.MkdirAll(filepath.Join(dir, CloneDir, ".amaru_registry", "context", "myapp"), 0755)
 
 	cfg := &Config{
 		Registry:  manifest.RegistryConfig{URL: "github:acme/registry", Auth: "none"},
@@ -273,8 +274,94 @@ func TestInitAlreadyInitialized(t *testing.T) {
 
 	backend := &mockBackend{name: "git"}
 	err := Init(context.Background(), dir, cfg, backend)
-	if err == nil {
-		t.Error("expected error for already initialized")
+	if err != nil {
+		t.Fatalf("expected idempotent init to repair, got error: %v", err)
+	}
+	if len(backend.calls) != 0 {
+		t.Errorf("expected no clone on already-initialized repair, got %v", backend.calls)
+	}
+	info, err := os.Lstat(filepath.Join(dir, "docs", "context"))
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected repaired symlink, got info=%v err=%v", info, err)
+	}
+}
+
+func TestEnsureSymlink(t *testing.T) {
+	newCfg := func() *Config {
+		return &Config{Project: "myapp", LocalPath: "docs/context"}
+	}
+	setupClone := func(dir string) {
+		os.MkdirAll(filepath.Join(dir, CloneDir, ".amaru_registry", "context", "myapp"), 0755)
+	}
+
+	t.Run("creates missing symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		setupClone(dir)
+		created, err := EnsureSymlink(dir, newCfg())
+		if err != nil || !created {
+			t.Fatalf("expected created=true, got created=%v err=%v", created, err)
+		}
+		target, err := os.Readlink(filepath.Join(dir, "docs", "context"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(target, "myapp") {
+			t.Errorf("symlink should point at the project dir, got %s", target)
+		}
+	})
+
+	t.Run("leaves a live symlink alone", func(t *testing.T) {
+		dir := t.TempDir()
+		setupClone(dir)
+		if _, err := EnsureSymlink(dir, newCfg()); err != nil {
+			t.Fatal(err)
+		}
+		created, err := EnsureSymlink(dir, newCfg())
+		if err != nil || created {
+			t.Errorf("expected created=false on live link, got created=%v err=%v", created, err)
+		}
+	})
+
+	t.Run("replaces a broken symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		setupClone(dir)
+		os.MkdirAll(filepath.Join(dir, "docs"), 0755)
+		os.Symlink("nowhere-real", filepath.Join(dir, "docs", "context"))
+		created, err := EnsureSymlink(dir, newCfg())
+		if err != nil || !created {
+			t.Fatalf("expected broken link replaced, got created=%v err=%v", created, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "docs", "context")); err != nil {
+			t.Errorf("replaced link should resolve: %v", err)
+		}
+	})
+
+	t.Run("refuses to clobber a real directory", func(t *testing.T) {
+		dir := t.TempDir()
+		setupClone(dir)
+		os.MkdirAll(filepath.Join(dir, "docs", "context"), 0755)
+		if _, err := EnsureSymlink(dir, newCfg()); err == nil {
+			t.Error("expected error for non-symlink at the local path")
+		}
+	})
+}
+
+func TestSyncRepairsMissingSymlink(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, CloneDir, ".amaru_registry", "context", "myapp"), 0755)
+
+	cfg := &Config{Project: "myapp", LocalPath: "docs/context"}
+	backend := &mockBackend{name: "git"}
+
+	if err := Sync(context.Background(), dir, cfg, backend); err != nil {
+		t.Fatalf("Sync error: %v", err)
+	}
+	if len(backend.calls) != 1 || backend.calls[0] != "Pull" {
+		t.Errorf("expected [Pull], got %v", backend.calls)
+	}
+	info, err := os.Lstat(filepath.Join(dir, "docs", "context"))
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("expected sync to repair the symlink, got info=%v err=%v", info, err)
 	}
 }
 
@@ -300,7 +387,7 @@ func TestSync(t *testing.T) {
 	// Create clone dir to simulate initialized state
 	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
 
-	cfg := &Config{Project: "myapp"}
+	cfg := &Config{Project: "myapp", LocalPath: "docs/context"}
 	backend := &mockBackend{name: "git"}
 
 	err := Sync(context.Background(), dir, cfg, backend)

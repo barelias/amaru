@@ -433,3 +433,41 @@ func TestSaveAndLoad(t *testing.T) {
 		t.Errorf("expected main registry, got %s", loaded.Commands["dev/bootstrap"].Registry)
 	}
 }
+
+func TestContextMountsJSON(t *testing.T) {
+	t.Run("legacy object shape parses as one mount", func(t *testing.T) {
+		var m Manifest
+		data := []byte(`{"registries":{},"context":{"registry":"r","project":"p","path":"docs/x"}}`)
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatal(err)
+		}
+		if len(m.Context) != 1 || m.Context[0].Project != "p" || m.Context[0].Path != "docs/x" {
+			t.Errorf("unexpected mounts: %+v", m.Context)
+		}
+	})
+
+	t.Run("list shape parses as many mounts", func(t *testing.T) {
+		var m Manifest
+		data := []byte(`{"registries":{},"context":[{"registry":"r","project":"a"},{"registry":"r","project":"b","path":"docs/b"}]}`)
+		if err := json.Unmarshal(data, &m); err != nil {
+			t.Fatal(err)
+		}
+		if len(m.Context) != 2 || m.Context[1].Project != "b" {
+			t.Errorf("unexpected mounts: %+v", m.Context)
+		}
+	})
+
+	t.Run("single mount round-trips to the object shape", func(t *testing.T) {
+		out, err := json.Marshal(ContextMounts{{Registry: "r", Project: "p"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out)[0] != '{' {
+			t.Errorf("expected object shape, got %s", out)
+		}
+		out, _ = json.Marshal(ContextMounts{{Project: "a"}, {Project: "b"}})
+		if string(out)[0] != '[' {
+			t.Errorf("expected list shape, got %s", out)
+		}
+	})
+}

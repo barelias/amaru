@@ -61,29 +61,63 @@ type Config struct {
 	LocalPath string // Where context docs are symlinked (e.g. "docs/context")
 }
 
-// ResolveConfig reads context configuration from the manifest.
-func ResolveConfig(m *manifest.Manifest) (*Config, error) {
-	if m.Context == nil {
+// ResolveConfigs reads every context mount from the manifest. All mounts
+// share ONE sparse checkout (CloneDir), so they must point at the same
+// registry; paths and projects must not collide.
+func ResolveConfigs(m *manifest.Manifest) ([]*Config, error) {
+	if len(m.Context) == 0 {
 		return nil, fmt.Errorf("no context configuration in amaru.json")
 	}
 
-	regAlias := m.Context.Registry
-	reg, ok := m.Registries[regAlias]
-	if !ok {
-		return nil, fmt.Errorf("context registry %q not found in manifest", regAlias)
-	}
+	seenPath := map[string]bool{}
+	seenProject := map[string]bool{}
+	var cfgs []*Config
+	for _, mount := range m.Context {
+		regAlias := mount.Registry
+		reg, ok := m.Registries[regAlias]
+		if !ok {
+			return nil, fmt.Errorf("context registry %q not found in manifest", regAlias)
+		}
+		if len(cfgs) > 0 && regAlias != cfgs[0].RegAlias {
+			return nil, fmt.Errorf(
+				"context mounts must share one registry (a single checkout at %s): found %q and %q",
+				CloneDir, cfgs[0].RegAlias, regAlias)
+		}
 
-	localPath := m.Context.Path
-	if localPath == "" {
-		localPath = "docs/context"
-	}
+		localPath := mount.Path
+		if localPath == "" {
+			localPath = "docs/context"
+		}
+		if seenPath[localPath] {
+			return nil, fmt.Errorf("duplicate context path %q in amaru.json — each mount needs its own path", localPath)
+		}
+		if seenProject[mount.Project] {
+			return nil, fmt.Errorf("duplicate context project %q in amaru.json", mount.Project)
+		}
+		seenPath[localPath] = true
+		seenProject[mount.Project] = true
 
-	return &Config{
-		Registry:  reg,
-		RegAlias:  regAlias,
-		Project:   m.Context.Project,
-		LocalPath: localPath,
-	}, nil
+		cfgs = append(cfgs, &Config{
+			Registry:  reg,
+			RegAlias:  regAlias,
+			Project:   mount.Project,
+			LocalPath: localPath,
+		})
+	}
+	return cfgs, nil
+}
+
+// FilterByProject narrows mounts to one project (the --project flag).
+func FilterByProject(cfgs []*Config, project string) ([]*Config, error) {
+	if project == "" {
+		return cfgs, nil
+	}
+	for _, cfg := range cfgs {
+		if cfg.Project == project {
+			return []*Config{cfg}, nil
+		}
+	}
+	return nil, fmt.Errorf("no context mount for project %q in amaru.json", project)
 }
 
 // RepoURL converts the registry URL format to a cloneable URL.
@@ -105,6 +139,22 @@ func (c *Config) SparsePaths() []string {
 		"context/" + c.Project,
 		"AGENTS.md",
 	}
+}
+
+// UnionSparsePaths merges every mount's sparse paths, deduplicated in order —
+// the single checkout materializes all projects at once.
+func UnionSparsePaths(cfgs []*Config) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, cfg := range cfgs {
+		for _, p := range cfg.SparsePaths() {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }
 
 // resolveContextSrc returns whichever of the two candidate context source
@@ -166,8 +216,11 @@ func EnsureSymlink(projectDir string, cfg *Config) (bool, error) {
 // included) instead of refusing — a live checkout with a deleted symlink used
 // to dead-end here (init refused, sync didn't recreate), silently stalling
 // the context channel for good.
-func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend) error {
-	repoURL, err := cfg.RepoURL()
+func Init(ctx context.Context, projectDir string, cfgs []*Config, backend vcs.Backend) error {
+	if len(cfgs) == 0 {
+		return fmt.Errorf("no context mounts to initialize")
+	}
+	repoURL, err := cfgs[0].RepoURL()
 	if err != nil {
 		return err
 	}
@@ -176,33 +229,49 @@ func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 
 	switch StateOf(projectDir) {
 	case CheckoutValid:
-		_, err := EnsureSymlink(projectDir, cfg)
-		return err
+		// Already cloned: widen the sparse profile to any mount added since,
+		// then make sure every mount's symlink stands.
+		if err := backend.EnsureSparsePaths(ctx, cloneTarget, sparsePathsFor(cfgs, backend)); err != nil {
+			return fmt.Errorf("updating sparse paths: %w", err)
+		}
+		for _, cfg := range cfgs {
+			if _, err := EnsureSymlink(projectDir, cfg); err != nil {
+				return err
+			}
+		}
+		return nil
 	case CheckoutInvalid:
 		return fmt.Errorf("%s exists but is not a repository — remove it and run 'amaru context init' again", cloneTarget)
 	}
 
-	var paths []string
-	if backend.Name() == "sapling" {
-		paths = []string{cfg.Project}
-	} else {
-		paths = cfg.SparsePaths()
-	}
-
-	if err := backend.SparseClone(ctx, repoURL, cloneTarget, paths); err != nil {
+	if err := backend.SparseClone(ctx, repoURL, cloneTarget, sparsePathsFor(cfgs, backend)); err != nil {
 		return fmt.Errorf("sparse clone failed: %w", err)
 	}
 
-	if _, err := EnsureSymlink(projectDir, cfg); err != nil {
-		return err
+	for _, cfg := range cfgs {
+		if _, err := EnsureSymlink(projectDir, cfg); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
+// sparsePathsFor picks the path vocabulary the backend understands.
+func sparsePathsFor(cfgs []*Config, backend vcs.Backend) []string {
+	if backend.Name() == "sapling" {
+		var out []string
+		for _, cfg := range cfgs {
+			out = append(out, cfg.Project)
+		}
+		return out
+	}
+	return UnionSparsePaths(cfgs)
+}
+
 // Sync pulls latest context from the centralized repo and repairs the local
 // symlink if it went missing — the pull alone can't restore it.
-func Sync(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend) error {
+func Sync(ctx context.Context, projectDir string, cfgs []*Config, backend vcs.Backend) error {
 	cloneDir := filepath.Join(projectDir, CloneDir)
 
 	switch StateOf(projectDir) {
@@ -212,16 +281,25 @@ func Sync(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 		return fmt.Errorf("%w: %s exists but is not a repository — refusing to run VCS commands there (they would hit the surrounding project); remove the directory and run 'amaru context init'", ErrNotInitialized, cloneDir)
 	}
 
+	// A mount added to amaru.json after init materializes on the next sync.
+	if err := backend.EnsureSparsePaths(ctx, cloneDir, sparsePathsFor(cfgs, backend)); err != nil {
+		return fmt.Errorf("updating sparse paths: %w", err)
+	}
+
 	if err := backend.Pull(ctx, cloneDir); err != nil {
 		return err
 	}
 
-	_, err := EnsureSymlink(projectDir, cfg)
-	return err
+	for _, cfg := range cfgs {
+		if _, err := EnsureSymlink(projectDir, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Push stages, commits, and pushes local context changes.
-func Push(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend, message string) error {
+func Push(ctx context.Context, projectDir string, cfgs []*Config, backend vcs.Backend, message string) error {
 	cloneDir := filepath.Join(projectDir, CloneDir)
 
 	switch StateOf(projectDir) {
@@ -235,17 +313,22 @@ func Push(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 		return nil // Nothing to push
 	}
 
-	// Stage whichever layout's context path actually exists in the clone.
-	contextPath := "context/" + cfg.Project
-	if _, err := os.Stat(filepath.Join(cloneDir, contextPath)); err != nil {
-		contextPath = ".amaru_registry/context/" + cfg.Project
-	}
-	if err := backend.Add(ctx, cloneDir, []string{contextPath}); err != nil {
-		return fmt.Errorf("staging changes: %w", err)
+	// Stage every mount's context path (whichever layout exists in the clone);
+	// one commit carries whatever actually changed across mounts.
+	var projects []string
+	for _, cfg := range cfgs {
+		contextPath := "context/" + cfg.Project
+		if _, err := os.Stat(filepath.Join(cloneDir, contextPath)); err != nil {
+			contextPath = ".amaru_registry/context/" + cfg.Project
+		}
+		if err := backend.Add(ctx, cloneDir, []string{contextPath}); err != nil {
+			return fmt.Errorf("staging changes for %s: %w", cfg.Project, err)
+		}
+		projects = append(projects, cfg.Project)
 	}
 
 	if message == "" {
-		message = fmt.Sprintf("amaru: update context for %s", cfg.Project)
+		message = fmt.Sprintf("amaru: update context for %s", strings.Join(projects, ", "))
 	}
 
 	return backend.CommitAndPush(ctx, cloneDir, message)
@@ -273,13 +356,15 @@ func EnsureGitIgnore(projectDir string) error {
 	return err
 }
 
-// LocalPath returns the configured local path for context docs.
-func LocalPath(m *manifest.Manifest) string {
-	if m.Context == nil {
-		return ""
+// LocalPaths returns the configured local paths for every context mount.
+func LocalPaths(m *manifest.Manifest) []string {
+	var out []string
+	for _, mount := range m.Context {
+		if mount.Path != "" {
+			out = append(out, mount.Path)
+		} else {
+			out = append(out, "docs/context")
+		}
 	}
-	if m.Context.Path != "" {
-		return m.Context.Path
-	}
-	return "docs/context"
+	return out
 }

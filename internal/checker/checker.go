@@ -16,30 +16,30 @@ import (
 
 // UpdateInfo describes an available update.
 type UpdateInfo struct {
-	Name        string
-	ItemType    string // "skill" or "command"
-	Registry    string
-	Current     string
-	Latest      string
+	Name          string
+	ItemType      string // "skill" or "command"
+	Registry      string
+	Current       string
+	Latest        string
 	LatestInRange string // latest compatible with the range
-	Category    string // "patch", "minor", "major"
+	Category      string // "patch", "minor", "major"
 }
 
 // DriftInfo describes a locally modified item.
 type DriftInfo struct {
-	Name     string
-	ItemType string
-	Registry string
-	Version  string
+	Name       string
+	ItemType   string
+	Registry   string
+	Version    string
 	LocalHash  string
 	RemoteHash string
 }
 
 // CheckResult is the output of a check operation.
 type CheckResult struct {
-	Updates    []UpdateInfo
-	Drifts     []DriftInfo
-	UpToDate   int
+	Updates  []UpdateInfo
+	Drifts   []DriftInfo
+	UpToDate int
 }
 
 // Check compares the local lock against the registries.

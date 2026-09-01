@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/useamaru/amaru/internal/ctxdocs"
@@ -127,6 +128,13 @@ func runContextSync(ctx context.Context) error {
 
 	backend := vcs.Detect()
 	if err := ctxdocs.Sync(ctx, ".", cfg, backend); err != nil {
+		// Hook position (post-merge/post-checkout): a fresh git worktree never
+		// carries the gitignored checkout — warn and exit clean, don't fail.
+		if errors.Is(err, ctxdocs.ErrNotInitialized) {
+			ui.Warn("%v", err)
+			ui.Warn("Nothing to sync here (fresh clone or git worktree?). Run 'amaru context init' to set it up.")
+			return nil
+		}
 		return err
 	}
 
@@ -147,6 +155,12 @@ func runContextPush(ctx context.Context) error {
 
 	backend := vcs.Detect()
 	if err := ctxdocs.Push(ctx, ".", cfg, backend, contextPushMessage); err != nil {
+		// Hook position (post-commit): same worktree tolerance as sync.
+		if errors.Is(err, ctxdocs.ErrNotInitialized) {
+			ui.Warn("%v", err)
+			ui.Warn("Nothing to push here (fresh clone or git worktree?). Run 'amaru context init' to set it up.")
+			return nil
+		}
 		return err
 	}
 

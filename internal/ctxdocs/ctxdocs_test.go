@@ -2,6 +2,7 @@ package ctxdocs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -194,6 +195,22 @@ func TestLocalPath(t *testing.T) {
 	})
 }
 
+// fakeCheckout fabricates a VALID context checkout: the content dirs plus a
+// .git marker — without it the guard classifies the dir as CheckoutInvalid.
+func fakeCheckout(t *testing.T, dir string, withProject bool) {
+	t.Helper()
+	base := filepath.Join(dir, CloneDir)
+	if withProject {
+		base = filepath.Join(base, ".amaru_registry", "context", "myapp")
+	}
+	if err := os.MkdirAll(base, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, CloneDir, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // mockBackend implements vcs.Backend for testing.
 type mockBackend struct {
 	name       string
@@ -264,7 +281,7 @@ func TestInitAlreadyInitialized(t *testing.T) {
 	dir := t.TempDir()
 	// Live checkout, but the symlink was deleted (the real-world failure: init
 	// used to refuse and sync didn't recreate — the channel stalled silently).
-	os.MkdirAll(filepath.Join(dir, CloneDir, ".amaru_registry", "context", "myapp"), 0755)
+	fakeCheckout(t, dir, true)
 
 	cfg := &Config{
 		Registry:  manifest.RegistryConfig{URL: "github:acme/registry", Auth: "none"},
@@ -291,7 +308,7 @@ func TestEnsureSymlink(t *testing.T) {
 		return &Config{Project: "myapp", LocalPath: "docs/context"}
 	}
 	setupClone := func(dir string) {
-		os.MkdirAll(filepath.Join(dir, CloneDir, ".amaru_registry", "context", "myapp"), 0755)
+		fakeCheckout(t, dir, true)
 	}
 
 	t.Run("creates missing symlink", func(t *testing.T) {
@@ -348,7 +365,7 @@ func TestEnsureSymlink(t *testing.T) {
 
 func TestSyncRepairsMissingSymlink(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, CloneDir, ".amaru_registry", "context", "myapp"), 0755)
+	fakeCheckout(t, dir, true)
 
 	cfg := &Config{Project: "myapp", LocalPath: "docs/context"}
 	backend := &mockBackend{name: "git"}
@@ -385,7 +402,7 @@ func TestInitSaplingPaths(t *testing.T) {
 func TestSync(t *testing.T) {
 	dir := t.TempDir()
 	// Create clone dir to simulate initialized state
-	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+	fakeCheckout(t, dir, false)
 
 	cfg := &Config{Project: "myapp", LocalPath: "docs/context"}
 	backend := &mockBackend{name: "git"}
@@ -412,7 +429,7 @@ func TestSyncNotInitialized(t *testing.T) {
 
 func TestPush(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+	fakeCheckout(t, dir, false)
 
 	cfg := &Config{Project: "myapp"}
 	backend := &mockBackend{name: "git", hasChanges: true}
@@ -431,7 +448,7 @@ func TestPush(t *testing.T) {
 
 func TestPushNoChanges(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+	fakeCheckout(t, dir, false)
 
 	cfg := &Config{Project: "myapp"}
 	backend := &mockBackend{name: "git", hasChanges: false}
@@ -453,5 +470,93 @@ func TestPushNotInitialized(t *testing.T) {
 	err := Push(context.Background(), dir, cfg, backend, "")
 	if err == nil {
 		t.Error("expected error for not initialized")
+	}
+}
+
+func TestPushMissingCheckoutIsCleanNoOp(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{Project: "myapp"}
+	backend := &mockBackend{name: "git"}
+
+	err := Push(context.Background(), dir, cfg, backend, "")
+	if !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("expected ErrNotInitialized, got %v", err)
+	}
+	// The corruption vector was running VCS commands anyway: zero calls.
+	if len(backend.calls) != 0 {
+		t.Errorf("expected NO backend calls, got %v", backend.calls)
+	}
+}
+
+func TestPushInvalidCheckoutNeverTouchesBackend(t *testing.T) {
+	dir := t.TempDir()
+	// The live corruption: CloneDir exists WITHOUT its own repository. git
+	// discovers the surrounding project and add/commit land THERE — a
+	// post-commit push in a worktree committed 104 RFC files into the
+	// consumer repo.
+	os.MkdirAll(filepath.Join(dir, CloneDir, "context", "myapp"), 0755)
+
+	cfg := &Config{Project: "myapp"}
+	backend := &mockBackend{name: "git", hasChanges: true}
+
+	err := Push(context.Background(), dir, cfg, backend, "")
+	if !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("expected ErrNotInitialized, got %v", err)
+	}
+	if len(backend.calls) != 0 {
+		t.Errorf("expected NO backend calls on invalid checkout, got %v", backend.calls)
+	}
+}
+
+func TestSyncInvalidCheckoutNeverTouchesBackend(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+
+	cfg := &Config{Project: "myapp", LocalPath: "docs/context"}
+	backend := &mockBackend{name: "git"}
+
+	err := Sync(context.Background(), dir, cfg, backend)
+	if !errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("expected ErrNotInitialized, got %v", err)
+	}
+	if len(backend.calls) != 0 {
+		t.Errorf("expected NO backend calls, got %v", backend.calls)
+	}
+}
+
+func TestInitRefusesInvalidCheckout(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+
+	cfg := &Config{
+		Registry:  manifest.RegistryConfig{URL: "github:acme/registry", Auth: "none"},
+		Project:   "myapp",
+		LocalPath: "docs/context",
+	}
+	backend := &mockBackend{name: "git"}
+	err := Init(context.Background(), dir, cfg, backend)
+	if err == nil || errors.Is(err, ErrNotInitialized) {
+		t.Fatalf("expected a plain error telling to remove the dir, got %v", err)
+	}
+	if len(backend.calls) != 0 {
+		t.Errorf("expected no clone over an invalid checkout, got %v", backend.calls)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "docs", "context")); err == nil {
+		t.Error("must not symlink into an invalid checkout")
+	}
+}
+
+func TestStateOf(t *testing.T) {
+	dir := t.TempDir()
+	if got := StateOf(dir); got != CheckoutMissing {
+		t.Errorf("expected missing, got %v", got)
+	}
+	os.MkdirAll(filepath.Join(dir, CloneDir), 0755)
+	if got := StateOf(dir); got != CheckoutInvalid {
+		t.Errorf("expected invalid, got %v", got)
+	}
+	os.MkdirAll(filepath.Join(dir, CloneDir, ".git"), 0755)
+	if got := StateOf(dir); got != CheckoutValid {
+		t.Errorf("expected valid, got %v", got)
 	}
 }

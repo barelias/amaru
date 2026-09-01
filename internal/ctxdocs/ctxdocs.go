@@ -2,6 +2,7 @@ package ctxdocs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,42 @@ const (
 	// CloneDir is where the sparse context checkout lives inside the project.
 	CloneDir = ".claude/.amaru-context"
 )
+
+// ErrNotInitialized marks a missing or unusable context checkout. Callers in
+// hook position (post-commit push, post-merge sync) treat it as "nothing to
+// do here" and exit clean — a git worktree never carries the checkout (it is
+// gitignored and lives only in the main working tree).
+var ErrNotInitialized = errors.New("context checkout not initialized")
+
+// CheckoutState classifies what sits at CloneDir.
+type CheckoutState int
+
+const (
+	// CheckoutMissing: no directory at all.
+	CheckoutMissing CheckoutState = iota
+	// CheckoutValid: a self-contained VCS checkout (.git or .sl present).
+	CheckoutValid
+	// CheckoutInvalid: a directory WITHOUT its own repository. Running VCS
+	// commands with cwd here makes git discover the CONSUMER repo upward —
+	// an add/commit would land context files inside the user's project
+	// (measured live: a post-commit push in a worktree committed all 104
+	// RFC files into the consumer). Never run backend ops against it.
+	CheckoutInvalid
+)
+
+// StateOf inspects the context checkout under projectDir.
+func StateOf(projectDir string) CheckoutState {
+	cloneDir := filepath.Join(projectDir, CloneDir)
+	if _, err := os.Stat(cloneDir); err != nil {
+		return CheckoutMissing
+	}
+	for _, marker := range []string{".git", ".sl"} {
+		if _, err := os.Lstat(filepath.Join(cloneDir, marker)); err == nil {
+			return CheckoutValid
+		}
+	}
+	return CheckoutInvalid
+}
 
 // Config holds the resolved context configuration.
 type Config struct {
@@ -137,9 +174,12 @@ func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 
 	cloneTarget := filepath.Join(projectDir, CloneDir)
 
-	if _, err := os.Stat(cloneTarget); err == nil {
+	switch StateOf(projectDir) {
+	case CheckoutValid:
 		_, err := EnsureSymlink(projectDir, cfg)
 		return err
+	case CheckoutInvalid:
+		return fmt.Errorf("%s exists but is not a repository — remove it and run 'amaru context init' again", cloneTarget)
 	}
 
 	var paths []string
@@ -165,8 +205,11 @@ func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 func Sync(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend) error {
 	cloneDir := filepath.Join(projectDir, CloneDir)
 
-	if _, err := os.Stat(cloneDir); os.IsNotExist(err) {
-		return fmt.Errorf("context not initialized. Run 'amaru context init' first")
+	switch StateOf(projectDir) {
+	case CheckoutMissing:
+		return fmt.Errorf("%w at %s — run 'amaru context init' first", ErrNotInitialized, cloneDir)
+	case CheckoutInvalid:
+		return fmt.Errorf("%w: %s exists but is not a repository — refusing to run VCS commands there (they would hit the surrounding project); remove the directory and run 'amaru context init'", ErrNotInitialized, cloneDir)
 	}
 
 	if err := backend.Pull(ctx, cloneDir); err != nil {
@@ -181,8 +224,11 @@ func Sync(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 func Push(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend, message string) error {
 	cloneDir := filepath.Join(projectDir, CloneDir)
 
-	if _, err := os.Stat(cloneDir); os.IsNotExist(err) {
-		return fmt.Errorf("context not initialized. Run 'amaru context init' first")
+	switch StateOf(projectDir) {
+	case CheckoutMissing:
+		return fmt.Errorf("%w at %s — nothing to push", ErrNotInitialized, cloneDir)
+	case CheckoutInvalid:
+		return fmt.Errorf("%w: %s exists but is not a repository — refusing to run VCS commands there (they would hit the surrounding project); remove the directory and run 'amaru context init'", ErrNotInitialized, cloneDir)
 	}
 
 	if !backend.HasChanges(ctx, cloneDir) {

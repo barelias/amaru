@@ -16,30 +16,30 @@ import (
 
 // UpdateInfo describes an available update.
 type UpdateInfo struct {
-	Name        string
-	ItemType    string // "skill" or "command"
-	Registry    string
-	Current     string
-	Latest      string
+	Name          string
+	ItemType      string // "skill" or "command"
+	Registry      string
+	Current       string
+	Latest        string
 	LatestInRange string // latest compatible with the range
-	Category    string // "patch", "minor", "major"
+	Category      string // "patch", "minor", "major"
 }
 
 // DriftInfo describes a locally modified item.
 type DriftInfo struct {
-	Name     string
-	ItemType string
-	Registry string
-	Version  string
+	Name       string
+	ItemType   string
+	Registry   string
+	Version    string
 	LocalHash  string
 	RemoteHash string
 }
 
 // CheckResult is the output of a check operation.
 type CheckResult struct {
-	Updates    []UpdateInfo
-	Drifts     []DriftInfo
-	UpToDate   int
+	Updates  []UpdateInfo
+	Drifts   []DriftInfo
+	UpToDate int
 }
 
 // Check compares the local lock against the registries.
@@ -72,11 +72,25 @@ func Check(ctx context.Context, projectDir string, m *manifest.Manifest, lock *m
 		}
 	}
 
-	// Check skillset members from lock
+	// Check skillset members from lock. The index gives each member's latest
+	// version, so central advancement reports as an UPDATE — before this, a
+	// bumped member had no update path here and any hash difference was
+	// blamed on local edits.
+	indexCache := map[string]*registry.RegistryIndex{}
 	for _, lockedSS := range lock.Skillsets {
 		client, ok := clients[lockedSS.Registry]
 		if !ok {
 			continue
+		}
+
+		idx, cached := indexCache[lockedSS.Registry]
+		if !cached {
+			fetched, err := client.FetchIndex(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("fetching index for registry %q: %w", lockedSS.Registry, err)
+			}
+			indexCache[lockedSS.Registry] = fetched
+			idx = fetched
 		}
 
 		for _, member := range lockedSS.Members {
@@ -91,7 +105,23 @@ func Check(ctx context.Context, projectDir string, m *manifest.Manifest, lock *m
 				continue
 			}
 
-			// Use "latest" constraint — skillset members are checked by drift only
+			// Central advanced past the locked version → update available.
+			if entry, ok := idx.EntriesForType(types.ItemType(itemType))[itemName]; ok {
+				if entry.Latest != "" && locked.Version != "" && locked.Version != "latest" &&
+					entry.Latest != locked.Version {
+					result.Updates = append(result.Updates, UpdateInfo{
+						Name:          itemName,
+						ItemType:      itemType,
+						Registry:      lockedSS.Registry,
+						Current:       locked.Version,
+						Latest:        entry.Latest,
+						LatestInRange: entry.Latest,
+						Category:      resolver.ClassifyUpdate(locked.Version, entry.Latest),
+					})
+				}
+			}
+
+			// Use "latest" constraint — member drift is hash-based
 			if err := checkItem(ctx, result, itemType, itemName, lockedSS.Registry, "latest", locked, client, projectDir, m.IsIgnored(itemName)); err != nil {
 				return nil, fmt.Errorf("checking %s %s: %w", itemType, itemName, err)
 			}

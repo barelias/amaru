@@ -146,3 +146,24 @@ func TestUninstall(t *testing.T) {
 		t.Error("expected skill to be uninstalled")
 	}
 }
+
+func TestHashFilesMatchesComputeHash(t *testing.T) {
+	files := []registry.File{
+		{Path: "SKILL.md", Content: []byte("conteudo")},
+		{Path: "references/extra.md", Content: []byte("mais")},
+	}
+	dir := t.TempDir()
+	installed, err := Install(dir, "skill", "alpha", files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := HashFiles(files); got != installed {
+		t.Errorf("HashFiles (%s) must match the installed hash (%s)", got, installed)
+	}
+	if got := LocalHash(dir, "skill", "alpha"); got != installed {
+		t.Errorf("LocalHash (%s) must match the installed hash (%s)", got, installed)
+	}
+	if got := LocalHash(dir, "skill", "missing"); got != "" {
+		t.Errorf("LocalHash of a missing item must be empty, got %s", got)
+	}
+}

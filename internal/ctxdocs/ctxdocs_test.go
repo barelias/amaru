@@ -221,6 +221,7 @@ type mockBackend struct {
 	pushErr     error
 	calls       []string
 	sparsePaths []string
+	missing     map[string]bool
 }
 
 func (m *mockBackend) Name() string { return m.name }
@@ -229,8 +230,20 @@ func (m *mockBackend) SparseClone(ctx context.Context, repoURL, targetDir string
 	if m.cloneErr != nil {
 		return m.cloneErr
 	}
-	// Create the target directory to simulate a successful clone
-	return os.MkdirAll(filepath.Join(targetDir, ".amaru_registry", "context"), 0755)
+	// Simulate a successful clone: materialize each requested sparse path that
+	// "exists" in the fake registry (git silently skips the ones that don't).
+	if err := os.MkdirAll(filepath.Join(targetDir, ".amaru_registry", "context"), 0755); err != nil {
+		return err
+	}
+	for _, p := range paths {
+		if m.missing[p] {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Join(targetDir, p), 0755); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (m *mockBackend) EnsureSparsePaths(ctx context.Context, dir string, paths []string) error {
 	m.calls = append(m.calls, "EnsureSparsePaths")
@@ -412,7 +425,7 @@ func TestInitSaplingPaths(t *testing.T) {
 func TestSync(t *testing.T) {
 	dir := t.TempDir()
 	// Create clone dir to simulate initialized state
-	fakeCheckout(t, dir, false)
+	fakeCheckout(t, dir, true)
 
 	cfg := &Config{Project: "myapp", LocalPath: "docs/context"}
 	backend := &mockBackend{name: "git"}
@@ -710,5 +723,51 @@ func TestMultiMountWorktreeGuard(t *testing.T) {
 	}
 	if len(backend.calls) != 0 {
 		t.Errorf("expected NO backend calls on invalid, got %v", backend.calls)
+	}
+}
+
+func TestInitMissingProjectFailsNamedKeepsValidMounts(t *testing.T) {
+	dir := t.TempDir()
+	cfgs, err := ResolveConfigs(twoMountManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := &mockBackend{name: "git", missing: map[string]bool{
+		".amaru_registry/context/claude-base": true,
+		"context/claude-base":                 true,
+	}}
+
+	err = Init(context.Background(), dir, cfgs, backend)
+	if err == nil || !strings.Contains(err.Error(), `project "claude-base" not found in registry "main"`) {
+		t.Fatalf("expected named missing-project error, got %v", err)
+	}
+	// O mount válido do MESMO run segue funcionando...
+	if _, lerr := os.Stat(filepath.Join(dir, "docs", "rfc")); lerr != nil {
+		t.Errorf("valid mount must still be mounted: %v", lerr)
+	}
+	// ...e NENHUM symlink nasce para o ausente.
+	if _, lerr := os.Lstat(filepath.Join(dir, "docs", "claude-base")); lerr == nil {
+		t.Error("must not create a symlink for a missing project")
+	}
+}
+
+func TestEnsureSymlinkCleansOwnDanglingLink(t *testing.T) {
+	dir := t.TempDir()
+	// Estado deixado pela versão bugada: link pendurado com .amaru_registry no
+	// alvo, project inexistente no checkout.
+	os.MkdirAll(filepath.Join(dir, CloneDir, ".git"), 0755)
+	os.MkdirAll(filepath.Join(dir, "docs"), 0755)
+	os.Symlink(
+		filepath.Join("..", CloneDir, ".amaru_registry", "context", "ghost"),
+		filepath.Join(dir, "docs", "ghost"),
+	)
+
+	cfg := &Config{RegAlias: "main", Project: "ghost", LocalPath: "docs/ghost"}
+	_, err := EnsureSymlink(dir, cfg)
+	if err == nil || !strings.Contains(err.Error(), `project "ghost" not found`) {
+		t.Fatalf("expected missing-project error, got %v", err)
+	}
+	if _, lerr := os.Lstat(filepath.Join(dir, "docs", "ghost")); lerr == nil {
+		t.Error("expected the dangling link from the buggy run to be cleaned up")
 	}
 }

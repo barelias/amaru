@@ -158,15 +158,21 @@ func UnionSparsePaths(cfgs []*Config) []string {
 }
 
 // resolveContextSrc returns whichever of the two candidate context source
-// paths actually exists in the sparse checkout. Falls back to the legacy
-// path so callers always get a non-empty result (even if the path doesn't
-// exist yet — surfaces a clearer error downstream).
-func resolveContextSrc(cloneTarget, project string) string {
+// paths actually exists in the sparse checkout (flat v2 preferred, legacy
+// nested as fallback). ok=false means the project simply isn't in the
+// checkout — the registry doesn't have it. The old unconditional fallback
+// here is what minted dangling symlinks with .amaru_registry in the target
+// when a project didn't exist yet.
+func resolveContextSrc(cloneTarget, project string) (string, bool) {
 	flat := filepath.Join(cloneTarget, "context", project)
 	if _, err := os.Stat(flat); err == nil {
-		return flat
+		return flat, true
 	}
-	return filepath.Join(cloneTarget, ".amaru_registry", "context", project)
+	legacy := filepath.Join(cloneTarget, ".amaru_registry", "context", project)
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, true
+	}
+	return flat, false
 }
 
 // EnsureSymlink guarantees the configured local path is a symlink into the
@@ -176,8 +182,23 @@ func resolveContextSrc(cloneTarget, project string) string {
 // clobbers user data. Returns true when it (re)created the link.
 func EnsureSymlink(projectDir string, cfg *Config) (bool, error) {
 	cloneTarget := filepath.Join(projectDir, CloneDir)
-	contextSrc := resolveContextSrc(cloneTarget, cfg.Project)
+	contextSrc, srcExists := resolveContextSrc(cloneTarget, cfg.Project)
 	contextDst := filepath.Join(projectDir, cfg.LocalPath)
+
+	if !srcExists {
+		// Never symlink into nothing. If a previous (buggy) run left OUR
+		// dangling link behind, clean it up on the way out.
+		if info, err := os.Lstat(contextDst); err == nil && info.Mode()&os.ModeSymlink != 0 {
+			if target, err := os.Readlink(contextDst); err == nil && strings.Contains(target, ".amaru-context") {
+				if _, err := os.Stat(contextDst); err != nil {
+					_ = os.Remove(contextDst)
+				}
+			}
+		}
+		return false, fmt.Errorf(
+			"project %q not found in registry %q (the checkout has no context/%s) — is it published?",
+			cfg.Project, cfg.RegAlias, cfg.Project)
+	}
 
 	if info, err := os.Lstat(contextDst); err == nil {
 		if info.Mode()&os.ModeSymlink == 0 {
@@ -234,12 +255,7 @@ func Init(ctx context.Context, projectDir string, cfgs []*Config, backend vcs.Ba
 		if err := backend.EnsureSparsePaths(ctx, cloneTarget, sparsePathsFor(cfgs, backend)); err != nil {
 			return fmt.Errorf("updating sparse paths: %w", err)
 		}
-		for _, cfg := range cfgs {
-			if _, err := EnsureSymlink(projectDir, cfg); err != nil {
-				return err
-			}
-		}
-		return nil
+		return ensureAllSymlinks(projectDir, cfgs)
 	case CheckoutInvalid:
 		return fmt.Errorf("%s exists but is not a repository — remove it and run 'amaru context init' again", cloneTarget)
 	}
@@ -248,13 +264,20 @@ func Init(ctx context.Context, projectDir string, cfgs []*Config, backend vcs.Ba
 		return fmt.Errorf("sparse clone failed: %w", err)
 	}
 
+	return ensureAllSymlinks(projectDir, cfgs)
+}
+
+// ensureAllSymlinks mounts every config, collecting per-mount failures so one
+// unpublished project doesn't stop the valid mounts from working — the run
+// still exits non-zero, naming each missing project.
+func ensureAllSymlinks(projectDir string, cfgs []*Config) error {
+	var errs []error
 	for _, cfg := range cfgs {
 		if _, err := EnsureSymlink(projectDir, cfg); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-
-	return nil
+	return errors.Join(errs...)
 }
 
 // sparsePathsFor picks the path vocabulary the backend understands.
@@ -290,12 +313,7 @@ func Sync(ctx context.Context, projectDir string, cfgs []*Config, backend vcs.Ba
 		return err
 	}
 
-	for _, cfg := range cfgs {
-		if _, err := EnsureSymlink(projectDir, cfg); err != nil {
-			return err
-		}
-	}
-	return nil
+	return ensureAllSymlinks(projectDir, cfgs)
 }
 
 // Push stages, commits, and pushes local context changes.

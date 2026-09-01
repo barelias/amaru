@@ -82,7 +82,53 @@ func resolveContextSrc(cloneTarget, project string) string {
 	return filepath.Join(cloneTarget, ".amaru_registry", "context", project)
 }
 
-// Init sets up context sync for the current project.
+// EnsureSymlink guarantees the configured local path is a symlink into the
+// context checkout, layout-aware (prefers the flat v2 path, falls back to
+// legacy nested). A live symlink is left alone; a missing or broken one is
+// (re)created; a real file or directory at the path is an error — amaru never
+// clobbers user data. Returns true when it (re)created the link.
+func EnsureSymlink(projectDir string, cfg *Config) (bool, error) {
+	cloneTarget := filepath.Join(projectDir, CloneDir)
+	contextSrc := resolveContextSrc(cloneTarget, cfg.Project)
+	contextDst := filepath.Join(projectDir, cfg.LocalPath)
+
+	if info, err := os.Lstat(contextDst); err == nil {
+		if info.Mode()&os.ModeSymlink == 0 {
+			return false, fmt.Errorf(
+				"%s exists and is not a symlink; move it aside so amaru can manage it",
+				cfg.LocalPath,
+			)
+		}
+		if _, err := os.Stat(contextDst); err == nil {
+			return false, nil // live link — nothing to do
+		}
+		// Broken link (target moved or checkout relaid): replace it.
+		if err := os.Remove(contextDst); err != nil {
+			return false, err
+		}
+	}
+
+	if err := os.MkdirAll(filepath.Dir(contextDst), 0755); err != nil {
+		return false, err
+	}
+
+	// Make the symlink relative for portability
+	relSrc, err := filepath.Rel(filepath.Dir(contextDst), contextSrc)
+	if err != nil {
+		relSrc = contextSrc
+	}
+
+	if err := os.Symlink(relSrc, contextDst); err != nil {
+		return false, fmt.Errorf("creating symlink: %w", err)
+	}
+	return true, nil
+}
+
+// Init sets up context sync for the current project. Idempotent: with the
+// checkout already in place it repairs whatever is missing (the symlink
+// included) instead of refusing — a live checkout with a deleted symlink used
+// to dead-end here (init refused, sync didn't recreate), silently stalling
+// the context channel for good.
 func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend) error {
 	repoURL, err := cfg.RepoURL()
 	if err != nil {
@@ -92,7 +138,8 @@ func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 	cloneTarget := filepath.Join(projectDir, CloneDir)
 
 	if _, err := os.Stat(cloneTarget); err == nil {
-		return fmt.Errorf("context already initialized at %s", cloneTarget)
+		_, err := EnsureSymlink(projectDir, cfg)
+		return err
 	}
 
 	var paths []string
@@ -106,29 +153,15 @@ func Init(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 		return fmt.Errorf("sparse clone failed: %w", err)
 	}
 
-	// Create symlink from local path to the context project dir in the clone.
-	// Layout-aware: prefers the flat v2 path, falls back to legacy nested.
-	contextSrc := resolveContextSrc(cloneTarget, cfg.Project)
-	contextDst := filepath.Join(projectDir, cfg.LocalPath)
-
-	if err := os.MkdirAll(filepath.Dir(contextDst), 0755); err != nil {
+	if _, err := EnsureSymlink(projectDir, cfg); err != nil {
 		return err
-	}
-
-	// Make the symlink relative for portability
-	relSrc, err := filepath.Rel(filepath.Dir(contextDst), contextSrc)
-	if err != nil {
-		relSrc = contextSrc
-	}
-
-	if err := os.Symlink(relSrc, contextDst); err != nil {
-		return fmt.Errorf("creating symlink: %w", err)
 	}
 
 	return nil
 }
 
-// Sync pulls latest context from the centralized repo.
+// Sync pulls latest context from the centralized repo and repairs the local
+// symlink if it went missing — the pull alone can't restore it.
 func Sync(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backend) error {
 	cloneDir := filepath.Join(projectDir, CloneDir)
 
@@ -136,7 +169,12 @@ func Sync(ctx context.Context, projectDir string, cfg *Config, backend vcs.Backe
 		return fmt.Errorf("context not initialized. Run 'amaru context init' first")
 	}
 
-	return backend.Pull(ctx, cloneDir)
+	if err := backend.Pull(ctx, cloneDir); err != nil {
+		return err
+	}
+
+	_, err := EnsureSymlink(projectDir, cfg)
+	return err
 }
 
 // Push stages, commits, and pushes local context changes.

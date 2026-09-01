@@ -13,6 +13,8 @@ type Backend interface {
 	Name() string
 	// SparseClone clones a repo with a sparse profile, checking out only the specified paths.
 	SparseClone(ctx context.Context, repoURL, targetDir string, paths []string) error
+	// EnsureSparsePaths widens/sets the sparse profile of an existing checkout.
+	EnsureSparsePaths(ctx context.Context, dir string, paths []string) error
 	// Pull fetches and updates the sparse working copy.
 	Pull(ctx context.Context, dir string) error
 	// HasChanges returns true if there are uncommitted changes.
@@ -47,6 +49,19 @@ func (s *SaplingBackend) SparseClone(ctx context.Context, repoURL, targetDir str
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func (s *SaplingBackend) EnsureSparsePaths(ctx context.Context, dir string, paths []string) error {
+	for _, p := range paths {
+		cmd := exec.CommandContext(ctx, "sl", "sparse", "include", p)
+		cmd.Dir = dir
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("sl sparse include %s: %w", p, err)
+		}
+	}
+	return nil
 }
 
 func (s *SaplingBackend) Pull(ctx context.Context, dir string) error {
@@ -111,6 +126,22 @@ func (g *GitBackend) SparseClone(ctx context.Context, repoURL, targetDir string,
 	checkout := exec.CommandContext(ctx, "git", "checkout")
 	checkout.Dir = targetDir
 	return checkout.Run()
+}
+
+func (g *GitBackend) EnsureSparsePaths(ctx context.Context, dir string, paths []string) error {
+	// `set` is idempotent and replaces the profile with the given union — the
+	// working tree updates in place. --skip-checks: the profile includes
+	// AGENTS.md, a FILE, which cone mode otherwise refuses once it exists in
+	// the checkout (measured live against a real registry).
+	args := append([]string{"sparse-checkout", "set", "--skip-checks"}, paths...)
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git sparse-checkout set: %w", err)
+	}
+	return nil
 }
 
 func (g *GitBackend) Pull(ctx context.Context, dir string) error {

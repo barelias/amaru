@@ -128,6 +128,23 @@ Skills are installed to `.claude/skills/`, commands to `.claude/commands/`, and 
 }
 ```
 
+`context` also accepts a **list of mounts** — several context projects from the
+same registry mounted at different paths (e.g. shared RFCs plus a shared
+CLAUDE.md base each repo imports):
+
+```json
+{
+  "context": [
+    { "registry": "main", "project": "my-rfcs", "path": "docs/rfc" },
+    { "registry": "main", "project": "claude-base", "path": "docs/claude-base" }
+  ]
+}
+```
+
+All mounts share one sparse checkout, so they must use the same registry;
+paths and projects must be distinct. `context init/sync/push` operate on every
+mount (`--project <name>` narrows to one).
+
 **Shorthand** — when you have a single registry, skip the `registry` field:
 
 ```jsonc

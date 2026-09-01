@@ -18,7 +18,7 @@ type Manifest struct {
 	Commands   map[string]DependencySpec `json:"commands,omitempty"`
 	Agents     map[string]DependencySpec `json:"agents,omitempty"`
 	Skillsets  map[string]SkillsetSpec   `json:"skillsets,omitempty"`
-	Context    *ContextConfig            `json:"context,omitempty"`
+	Context    ContextMounts             `json:"context,omitempty"`
 	Ignored    []string                  `json:"ignored,omitempty"`
 }
 
@@ -27,6 +27,34 @@ type ContextConfig struct {
 	Registry string `json:"registry"`
 	Project  string `json:"project"`
 	Path     string `json:"path,omitempty"`
+}
+
+// ContextMounts is the manifest's "context" field: historically a single
+// object, now also a list of mounts — several context projects mounted at
+// different paths of the same repo (e.g. docs/rfc plus a shared CLAUDE.md
+// base). Both shapes parse; a single mount round-trips back to the object
+// form so existing manifests don't churn.
+type ContextMounts []ContextConfig
+
+func (c *ContextMounts) UnmarshalJSON(data []byte) error {
+	var one ContextConfig
+	if err := json.Unmarshal(data, &one); err == nil {
+		*c = ContextMounts{one}
+		return nil
+	}
+	var many []ContextConfig
+	if err := json.Unmarshal(data, &many); err != nil {
+		return fmt.Errorf("context must be an object or a list of objects: %w", err)
+	}
+	*c = ContextMounts(many)
+	return nil
+}
+
+func (c ContextMounts) MarshalJSON() ([]byte, error) {
+	if len(c) == 1 {
+		return json.Marshal(c[0])
+	}
+	return json.Marshal([]ContextConfig(c))
 }
 
 type RegistryConfig struct {

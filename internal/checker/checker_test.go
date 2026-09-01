@@ -17,9 +17,13 @@ import (
 type mockRegistryClient struct {
 	versions map[string][]*semver.Version // key: "itemType/name"
 	files    map[string][]registry.File   // key: "itemType/name/version"
+	index    *registry.RegistryIndex      // optional; empty index when nil
 }
 
 func (m *mockRegistryClient) FetchIndex(ctx context.Context) (*registry.RegistryIndex, error) {
+	if m.index != nil {
+		return m.index, nil
+	}
 	return &registry.RegistryIndex{}, nil
 }
 
@@ -388,5 +392,97 @@ func TestCheckSkipsUnlockedDeps(t *testing.T) {
 	// Should only check the locked dep, skip the unlocked one
 	if result.UpToDate != 1 {
 		t.Errorf("expected 1 up-to-date, got %d", result.UpToDate)
+	}
+}
+
+// installFake writes an item to the project dir and returns its hash.
+func installFake(t *testing.T, dir, itemType, name, content string) string {
+	t.Helper()
+	hash, err := installer.Install(dir, itemType, name, []registry.File{
+		{Path: "SKILL.md", Content: []byte(content)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return hash
+}
+
+func TestCheckSkillsetMemberAdvancedIsUpdateNotDrift(t *testing.T) {
+	dir := t.TempDir()
+	hash := installFake(t, dir, "skill", "alpha", "alpha v1")
+
+	m := &manifest.Manifest{
+		Registries: map[string]manifest.RegistryConfig{
+			"main": {URL: "github:acme/registry", Auth: "none"},
+		},
+	}
+	lock := &manifest.Lock{
+		Skills: map[string]manifest.LockedEntry{
+			"alpha": {Version: "1.0.0", Registry: "main", Hash: hash},
+		},
+		Commands: map[string]manifest.LockedEntry{},
+		Agents:   map[string]manifest.LockedEntry{},
+		Skillsets: map[string]manifest.LockedSkillset{
+			"ss": {Registry: "main", Members: []string{"skill/alpha"}},
+		},
+	}
+	client := &mockRegistryClient{
+		index: &registry.RegistryIndex{
+			Skills: map[string]registry.RegistryEntry{"alpha": {Latest: "1.1.0"}},
+		},
+	}
+
+	result, err := Check(context.Background(), dir, m, lock, map[string]registry.Client{"main": client})
+	if err != nil {
+		t.Fatalf("Check error: %v", err)
+	}
+	// Central advanced, disk matches the lock: that is an UPDATE, not a drift
+	// — it used to be reported as "locally edited".
+	if len(result.Updates) != 1 || result.Updates[0].Name != "alpha" || result.Updates[0].Latest != "1.1.0" {
+		t.Errorf("expected one update to 1.1.0, got %+v", result.Updates)
+	}
+	if len(result.Drifts) != 0 {
+		t.Errorf("expected no drift when local == locked, got %+v", result.Drifts)
+	}
+}
+
+func TestCheckSkillsetMemberLocalEditStillDrifts(t *testing.T) {
+	dir := t.TempDir()
+	hash := installFake(t, dir, "skill", "alpha", "alpha v1")
+	// Genuine local edit after install
+	if err := os.WriteFile(filepath.Join(dir, ".claude", "skills", "alpha", "SKILL.md"), []byte("edited"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &manifest.Manifest{
+		Registries: map[string]manifest.RegistryConfig{
+			"main": {URL: "github:acme/registry", Auth: "none"},
+		},
+	}
+	lock := &manifest.Lock{
+		Skills: map[string]manifest.LockedEntry{
+			"alpha": {Version: "1.0.0", Registry: "main", Hash: hash},
+		},
+		Commands: map[string]manifest.LockedEntry{},
+		Agents:   map[string]manifest.LockedEntry{},
+		Skillsets: map[string]manifest.LockedSkillset{
+			"ss": {Registry: "main", Members: []string{"skill/alpha"}},
+		},
+	}
+	client := &mockRegistryClient{
+		index: &registry.RegistryIndex{
+			Skills: map[string]registry.RegistryEntry{"alpha": {Latest: "1.0.0"}},
+		},
+	}
+
+	result, err := Check(context.Background(), dir, m, lock, map[string]registry.Client{"main": client})
+	if err != nil {
+		t.Fatalf("Check error: %v", err)
+	}
+	if len(result.Drifts) != 1 || result.Drifts[0].Name != "alpha" {
+		t.Errorf("expected the local edit to drift, got %+v", result.Drifts)
+	}
+	if len(result.Updates) != 0 {
+		t.Errorf("expected no update when central is at the locked version, got %+v", result.Updates)
 	}
 }

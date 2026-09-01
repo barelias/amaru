@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/useamaru/amaru/internal/installer"
 	"github.com/useamaru/amaru/internal/manifest"
@@ -89,10 +88,14 @@ func installItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock,
 		return fmt.Errorf("no client for registry %q", regAlias)
 	}
 
-	// Check if already installed and up to date
+	// Check if already installed and up to date. Presence alone doesn't cut
+	// it: the lock may have advanced on another machine (the skills dir is
+	// gitignored, the lock is versioned) — converge unless the drift was
+	// explicitly accepted with 'amaru ignore'.
 	if !installForce {
 		if locked, ok := lockEntries[name]; ok {
-			if installer.IsInstalled(".", itemType, name) {
+			if installer.IsInstalled(".", itemType, name) &&
+				(m.IsIgnored(name) || installer.LocalHash(".", itemType, name) == locked.Hash) {
 				displayVersion := locked.Version
 				if displayVersion == "" {
 					displayVersion = "latest"
@@ -147,26 +150,10 @@ func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpe
 		return fmt.Errorf("no client for registry %q", regAlias)
 	}
 
-	// Check if already fully installed (all members in lock)
-	if !installForce {
-		if lockedSS, ok := lock.Skillsets[name]; ok {
-			allInstalled := true
-			for _, member := range lockedSS.Members {
-				parts := strings.SplitN(member, "/", 2)
-				if len(parts) != 2 {
-					continue
-				}
-				if !installer.IsInstalled(".", parts[0], parts[1]) {
-					allInstalled = false
-					break
-				}
-			}
-			if allInstalled {
-				ui.Check("skillset %s (%d members) — already installed", name, len(lockedSS.Members))
-				return nil
-			}
-		}
-	}
+	// No presence-only short-circuit here: it used to hide member advancement
+	// entirely (a content bump with an unchanged member list never installed,
+	// and the lock digest went stale). The per-member loop below does the
+	// skipping — cheap when everything is current, correct when it isn't.
 
 	idx, err := client.FetchIndex(ctx)
 	if err != nil {
@@ -217,6 +204,7 @@ func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpe
 
 	var digestItems []string
 	var memberList []string
+	upToDate := 0
 	for _, item := range skillset.Items {
 		itemType := types.ItemType(item.Type)
 
@@ -234,16 +222,23 @@ func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpe
 		version := entry.Latest
 		lockEntries := lock.EntriesForType(itemType)
 
-		// Skip if already installed (unless --force)
+		// Skip only when the member is genuinely current: locked at the
+		// registry's latest version AND the disk matches the lock (or the
+		// drift was accepted with 'amaru ignore'). Presence alone used to
+		// skip here, so a member content bump never reached the disk.
 		if !installForce {
-			if _, hasLock := lockEntries[item.Name]; hasLock {
-				if installer.IsInstalled(".", item.Type, item.Name) {
-					lockVersion := version
-					if lockVersion == "" {
-						lockVersion = "latest"
-					}
+			if locked, hasLock := lockEntries[item.Name]; hasLock {
+				lockVersion := version
+				if lockVersion == "" {
+					lockVersion = "latest"
+				}
+				current := locked.Version == lockVersion &&
+					installer.IsInstalled(".", item.Type, item.Name) &&
+					(m.IsIgnored(item.Name) || installer.LocalHash(".", item.Type, item.Name) == locked.Hash)
+				if current {
 					digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s@%s", item.Type, item.Name, lockVersion, itemAlias))
 					memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+					upToDate++
 					continue
 				}
 			}
@@ -286,6 +281,10 @@ func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpe
 		Digest:      manifest.SkillsetDigest(digestItems),
 		Members:     memberList,
 		InstalledAt: "",
+	}
+
+	if upToDate == len(memberList) {
+		ui.Check("skillset %s (%d members) — already installed", name, len(memberList))
 	}
 
 	return nil

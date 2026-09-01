@@ -110,11 +110,15 @@ func printCheckResult(result *checker.CheckResult, quiet bool) {
 	}
 
 	if len(result.Drifts) > 0 {
-		ui.Header("⚠ Drift detected (locally edited):")
+		// The compared hashes are local vs LOCK — a mismatch means the install
+		// is out of sync (edited here, or the lock advanced on another
+		// machine), not necessarily a local edit.
+		ui.Header("⚠ Drift detected (installed differs from lock):")
 		for _, d := range result.Drifts {
-			fmt.Printf("  %s: hash local %s ≠ central %s (v%s) [%s]\n",
+			fmt.Printf("  %s: local hash %s ≠ locked %s (v%s) [%s]\n",
 				d.Name, d.LocalHash, d.RemoteHash, d.Version, d.Registry)
 		}
+		fmt.Println("  Run 'amaru install' to converge, or 'amaru ignore <name>' to keep a local edit.")
 	}
 
 	if len(result.Updates) == 0 && len(result.Drifts) == 0 {

@@ -102,6 +102,34 @@ func ComputeHash(dir string) (string, error) {
 	return fmt.Sprintf("%x", h.Sum(nil))[:12], nil
 }
 
+// HashFiles computes the same hash as ComputeHash, but over in-memory files —
+// what a download WOULD hash to if installed. Lets callers compare registry
+// content against the lock without touching the disk.
+func HashFiles(files []registry.File) string {
+	sorted := make([]registry.File, len(files))
+	copy(sorted, files)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Path < sorted[j].Path })
+
+	h := sha256.New()
+	for _, f := range sorted {
+		normalizedPath := strings.ReplaceAll(f.Path, string(os.PathSeparator), "/")
+		h.Write([]byte(normalizedPath))
+		h.Write([]byte("\n"))
+		h.Write(f.Content)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))[:12]
+}
+
+// LocalHash computes the hash of an installed item's directory. Returns ""
+// when the item isn't installed or unreadable.
+func LocalHash(projectDir, itemType, name string) string {
+	hash, err := ComputeHash(filepath.Join(projectDir, DirForType(itemType), name))
+	if err != nil {
+		return ""
+	}
+	return hash
+}
+
 // Uninstall removes the installed files for a skill or command.
 func Uninstall(projectDir, itemType, name string) error {
 	targetDir := filepath.Join(projectDir, DirForType(itemType), name)

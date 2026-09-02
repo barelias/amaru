@@ -4,7 +4,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "0.2.11"
+// Sobrescrita no release pelo ldflags do GoReleaser (-X ...cmd.version);
+// o valor aqui vale para builds de desenvolvimento e é o que o check-version
+// da CI exige bumpar a cada PR.
+var version = "0.2.12"
 
 var rootCmd = &cobra.Command{
 	Use:   "amaru",

@@ -26,10 +26,12 @@ jobs:
           git fetch origin "$BASE_BRANCH" --quiet
 
           # Extract version from current PR
-          PR_VERSION=$(grep -oP 'const version = "\K[^"]+' cmd/root.go)
+          # `var` desde o fix da injeção de versão do GoReleaser (aceita a forma antiga
+          # para comparar contra bases que ainda tenham `const`).
+          PR_VERSION=$(grep -oP '(const|var) version = "\K[^"]+' cmd/root.go)
 
           # Extract version from base branch
-          BASE_VERSION=$(git show "origin/$BASE_BRANCH:cmd/root.go" | grep -oP 'const version = "\K[^"]+')
+          BASE_VERSION=$(git show "origin/$BASE_BRANCH:cmd/root.go" | grep -oP '(const|var) version = "\K[^"]+')
 
           echo "Base version: $BASE_VERSION"
           echo "PR version:   $PR_VERSION"

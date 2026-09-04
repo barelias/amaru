@@ -18,7 +18,8 @@ amaru add <name> --type agent           # Add an agent
 amaru add <name> --type skillset        # Add a skillset (expands to individual items)
 amaru install                           # Install/sync everything from manifest
 amaru check                             # Check for updates and local drift
-amaru update [name]                     # Update to latest compatible versions
+amaru update [name]                     # Update to latest compatible versions (+ context mounts)
+amaru update --no-context               # Update skills only, leave context mounts alone
 amaru update --skillset <name>          # Update all members of a skillset
 amaru list                              # Show installed items with status
 ```
@@ -42,7 +43,7 @@ amaru list                              # Show installed items with status
 | Adding a specific skill | `amaru add <name>` |
 | New team member onboarding | `amaru install` (reads existing manifest) |
 | Checking if anything is outdated | `amaru check` or `amaru check --quiet` |
-| Updating everything | `amaru update` |
+| Updating everything (skills + context) | `amaru update` |
 | Updating one skillset | `amaru update --skillset <name>` |
 | Accepting local edits to a skill | `amaru ignore <name>` |
 | Setting up shared docs | `amaru context init` |

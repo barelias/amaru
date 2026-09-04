@@ -8,6 +8,7 @@ import (
 
 	"github.com/useamaru/amaru/internal/ctxdocs"
 	"github.com/useamaru/amaru/internal/hooks"
+	"github.com/useamaru/amaru/internal/manifest"
 	"github.com/useamaru/amaru/internal/ui"
 	"github.com/useamaru/amaru/internal/vcs"
 
@@ -96,6 +97,16 @@ func runContextInit(ctx context.Context) error {
 		return err
 	}
 
+	return initContext(ctx, cfgs)
+}
+
+// initContext clones (or repairs) the sparse context checkout, wires the
+// gitignore entry and the sync/push git hooks, and mounts every symlink.
+//
+// ctx is the cancellation context; cfgs are the resolved context mounts.
+// Returns an error only when the checkout itself could not be set up —
+// gitignore and hook failures are reported and tolerated.
+func initContext(ctx context.Context, cfgs []*ctxdocs.Config) error {
 	backend := vcs.Detect()
 	fmt.Printf("Using %s for sparse checkout...\n", backend.Name())
 
@@ -124,6 +135,42 @@ func runContextInit(ctx context.Context) error {
 	for _, cfg := range cfgs {
 		ui.Check("Context initialized for project %q", cfg.Project)
 		fmt.Printf("  Docs available at: %s/\n", cfg.LocalPath)
+	}
+	return nil
+}
+
+// syncManifestContext brings every context mount declared in amaru.json to the
+// registry tip, so `install` and `update` cover context docs the same way they
+// cover skills — the mounts used to advance only under an explicit
+// `amaru context sync`.
+//
+// ctx is the cancellation context; m is the loaded manifest. A manifest with
+// no context mounts is a no-op. Returns an error when the sync or the initial
+// clone fails.
+func syncManifestContext(ctx context.Context, m *manifest.Manifest) error {
+	if len(m.Context) == 0 {
+		return nil
+	}
+
+	cfgs, err := ctxdocs.ResolveConfigs(m)
+	if err != nil {
+		return err
+	}
+
+	ui.Header("Syncing context...")
+
+	// A first install (or a fresh clone, where the checkout is gitignored and
+	// therefore absent) has nothing to pull from yet.
+	if ctxdocs.StateOf(".") == ctxdocs.CheckoutMissing {
+		return initContext(ctx, cfgs)
+	}
+
+	if err := ctxdocs.Sync(ctx, ".", cfgs, vcs.Detect()); err != nil {
+		return err
+	}
+
+	for _, cfg := range cfgs {
+		ui.Check("Context synced for project %q", cfg.Project)
 	}
 	return nil
 }

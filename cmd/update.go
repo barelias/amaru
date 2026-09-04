@@ -17,12 +17,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var updateSkillset string
+var (
+	updateSkillset  string
+	updateNoContext bool
+)
 
 var updateCmd = &cobra.Command{
 	Use:   "update [name]",
 	Short: "Update skills/commands to latest compatible versions",
-	Long:  "Update skills/commands to the latest versions compatible with manifest ranges.\nUse --skillset to update all members of a skillset.",
+	Long:  "Update skills/commands to the latest versions compatible with manifest ranges.\nContext mounts declared in amaru.json are synced too (--no-context skips them).\nUse --skillset to update all members of a skillset.",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var name string
@@ -35,6 +38,7 @@ var updateCmd = &cobra.Command{
 
 func init() {
 	updateCmd.Flags().StringVar(&updateSkillset, "skillset", "", "Update all members of a skillset")
+	updateCmd.Flags().BoolVar(&updateNoContext, "no-context", false, "Skip syncing the context mounts declared in amaru.json")
 	rootCmd.AddCommand(updateCmd)
 }
 
@@ -64,6 +68,16 @@ func runUpdate(ctx context.Context, filterName string) error {
 		if _, isSkillset := m.Skillsets[filterName]; isSkillset {
 			return runUpdateSkillset(ctx, filterName, m, lock, clients)
 		}
+	}
+
+	// Context mounts ride along with a bare update: they are declared in the
+	// same manifest, and leaving them to an explicit 'amaru context sync' meant
+	// a green update over stale docs.
+	syncContext := func() error {
+		if updateNoContext || filterName != "" {
+			return nil
+		}
+		return syncManifestContext(ctx, m)
 	}
 
 	updated := 0
@@ -107,7 +121,7 @@ func runUpdate(ctx context.Context, filterName string) error {
 		} else {
 			fmt.Println("\nEverything is already up to date.")
 		}
-		return nil
+		return syncContext()
 	}
 
 	if err := manifest.SaveLock(".", lock); err != nil {
@@ -115,7 +129,7 @@ func runUpdate(ctx context.Context, filterName string) error {
 	}
 	fmt.Println("\nLock file updated.")
 
-	return nil
+	return syncContext()
 }
 
 func runUpdateSkillset(ctx context.Context, ssName string, m *manifest.Manifest, lock *manifest.Lock, clients map[string]registry.Client) error {
@@ -216,58 +230,35 @@ func updateSkillsetMembers(ctx context.Context, ssName string, m *manifest.Manif
 	added := 0
 	removed := 0
 
-	// Install new members and update existing ones
-	for _, item := range remoteSS.Items {
-		itemType := types.ItemType(item.Type)
-		memberKey := fmt.Sprintf("%s/%s", item.Type, item.Name)
-		lockEntries := lock.EntriesForType(itemType)
+	// Resolve every member first, then fetch them in one parallel batch: the
+	// per-member download used to run in series, so a skillset paid one full
+	// round trip per skill even when nothing had changed.
+	type memberPlan struct {
+		item    registry.SkillsetItem
+		alias   string
+		version string
+		isNew   bool
+		locked  manifest.LockedEntry
+	}
 
-		itemAlias, itemClient, itemIdx, err := resolveItemRegistry(item)
+	var plans []memberPlan
+	for _, item := range remoteSS.Items {
+		memberKey := fmt.Sprintf("%s/%s", item.Type, item.Name)
+
+		itemAlias, _, itemIdx, err := resolveItemRegistry(item)
 		if err != nil {
-			return updated + added + removed, err
+			return 0, err
 		}
-		entries := itemIdx.EntriesForType(itemType)
+		entries := itemIdx.EntriesForType(types.ItemType(item.Type))
 		entry, ok := entries[item.Name]
 		if !ok {
 			ui.Warn("  %s %q not found in registry %q, skipping", item.Type, item.Name, itemAlias)
 			continue
 		}
-		version := entry.Latest
 
 		if !localMembers[memberKey] {
-			// New member — download and install
-			files, err := itemClient.DownloadFiles(ctx, item.Type, item.Name, version)
-			if err != nil {
-				return updated + added + removed, fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
-			}
-			hash, err := installer.Install(".", item.Type, item.Name, files)
-			if err != nil {
-				return updated + added + removed, fmt.Errorf("installing %s %q: %w", item.Type, item.Name, err)
-			}
-
-			lockVersion := version
-			if lockVersion == "" {
-				lockVersion = "latest"
-			}
-			lockEntries[item.Name] = manifest.NewLockedEntry(lockVersion, itemAlias, hash)
-			displayVersion := version
-			if displayVersion == "" {
-				displayVersion = "latest"
-			}
-			ui.Check("  Added %s %s@%s (new member)", item.Type, item.Name, displayVersion)
-			added++
+			plans = append(plans, memberPlan{item: item, alias: itemAlias, version: entry.Latest, isNew: true})
 			continue
-		}
-
-		// Existing member — re-download and compare hash
-		locked, hasLock := lockEntries[item.Name]
-		if !hasLock {
-			continue
-		}
-
-		files, err := itemClient.DownloadFiles(ctx, item.Type, item.Name, version)
-		if err != nil {
-			return updated + added + removed, fmt.Errorf("downloading %s %q: %w", item.Type, item.Name, err)
 		}
 
 		// Accepted drift stays put: overwriting an ignored member on every
@@ -276,18 +267,49 @@ func updateSkillsetMembers(ctx context.Context, ssName string, m *manifest.Manif
 			continue
 		}
 
-		hash, err := installer.Install(".", item.Type, item.Name, files)
+		locked, hasLock := lock.EntriesForType(types.ItemType(item.Type))[item.Name]
+		if !hasLock {
+			continue
+		}
+		plans = append(plans, memberPlan{item: item, alias: itemAlias, version: entry.Latest, locked: locked})
+	}
+
+	jobs := make([]downloadJob, len(plans))
+	for i, p := range plans {
+		_, itemClient, _, err := resolveItemRegistry(p.item)
 		if err != nil {
-			return updated + added + removed, fmt.Errorf("installing %s %q: %w", item.Type, item.Name, err)
+			return 0, err
+		}
+		jobs[i] = downloadJob{Client: itemClient, ItemType: p.item.Type, Name: p.item.Name, Version: p.version}
+	}
+	downloadItems(ctx, jobs)
+
+	for i, p := range plans {
+		if jobs[i].Err != nil {
+			return updated + added + removed, fmt.Errorf("downloading %s %q: %w", p.item.Type, p.item.Name, jobs[i].Err)
 		}
 
-		if hash != locked.Hash {
-			lockVersion := version
-			if lockVersion == "" {
-				lockVersion = "latest"
-			}
-			lockEntries[item.Name] = manifest.NewLockedEntry(lockVersion, itemAlias, hash)
-			ui.Check("  Updated %s %s — content changed", item.Type, item.Name)
+		hash, err := installer.Install(".", p.item.Type, p.item.Name, jobs[i].Files)
+		if err != nil {
+			return updated + added + removed, fmt.Errorf("installing %s %q: %w", p.item.Type, p.item.Name, err)
+		}
+
+		lockVersion := p.version
+		if lockVersion == "" {
+			lockVersion = "latest"
+		}
+		lockEntries := lock.EntriesForType(types.ItemType(p.item.Type))
+
+		if p.isNew {
+			lockEntries[p.item.Name] = manifest.NewLockedEntry(lockVersion, p.alias, hash)
+			ui.Check("  Added %s %s@%s (new member)", p.item.Type, p.item.Name, lockVersion)
+			added++
+			continue
+		}
+
+		if hash != p.locked.Hash {
+			lockEntries[p.item.Name] = manifest.NewLockedEntry(lockVersion, p.alias, hash)
+			ui.Check("  Updated %s %s — content changed", p.item.Type, p.item.Name)
 			updated++
 		}
 	}

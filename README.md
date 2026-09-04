@@ -184,9 +184,11 @@ amaru.json created. Run `amaru browse` to see available skills.
 
 Accepts any GitHub URL format — SSH (`git@github.com:org/repo.git`), HTTPS (`https://github.com/org/repo`), `ssh://`, `http://`, bare domain (`github.com/org/repo`), or the canonical shorthand (`github:org/repo`). All formats are normalized automatically.
 
-### `amaru install [--force]`
+### `amaru install [--force] [--no-context]`
 
-Resolves versions, downloads files from registries, writes to `.claude/`, and generates the lock file.
+Resolves versions, downloads files from registries, writes to `.claude/`, and generates the lock file. Members of a skillset are downloaded in parallel.
+
+Context mounts declared in `amaru.json` are set up and synced in the same run — a first install clones the sparse checkout, later ones pull it. `--no-context` skips that step.
 
 ```
 $ amaru install
@@ -238,7 +240,7 @@ Use `--quiet` for the compact box format (designed for session-start hooks):
 
 Results are cached for 4 hours so it doesn't slow down your session startup.
 
-### `amaru update [name]`
+### `amaru update [name] [--no-context]`
 
 Updates to the latest version compatible with your declared ranges.
 
@@ -249,7 +251,7 @@ $ amaru update research
 Lock file updated.
 ```
 
-Without arguments, updates everything.
+Without arguments, updates everything — skills, commands, agents, every skillset, **and** the context mounts declared in `amaru.json` (`--no-context` skips them). Naming an item or a skillset narrows the run to it and leaves context alone.
 
 ### `amaru update --skillset <name>`
 

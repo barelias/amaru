@@ -23,8 +23,8 @@ amaru (CLI entry point)
 ## Key Data Flow
 
 1. **Add**: `cmd/add.go` → `registry.Client.FetchIndex()` → `manifest.SetDep()` → `registry.Client.DownloadFiles()` → `installer.Install()` → `manifest.SaveLock()`
-2. **Install**: `cmd/install.go` → for each dep: `resolver.Resolve()` → `DownloadFiles()` → `Install()` → `SaveLock()`
-3. **Update**: `cmd/update.go` → `resolver.Resolve()` finds best compatible version → downloads + installs if newer
+2. **Install**: `cmd/install.go` → for each dep: `resolver.Resolve()` → `DownloadFiles()` → `Install()` → `SaveLock()` → `syncManifestContext()`
+3. **Update**: `cmd/update.go` → `resolver.Resolve()` finds best compatible version → downloads + installs if newer → `syncManifestContext()` (bare update only)
 4. **Check**: `internal/checker/checker.go` → compares locked versions against registry, detects hash drift
 5. **Skillsets**: `cmd/add.go:runAddSkillset()` → validates all members → installs each → records digest in `lock.Skillsets`
 6. **Repo Add**: `cmd/repo_add.go` → `scaffold.FindRegistryRoot()` → `scaffold.LoadLocalIndex()` → `registry.LayoutFor(idx)` → `scaffold.ItemManifestFor()` → write files at `layout.ItemDir(...)` → `scaffold.SaveLocalIndex()`

@@ -14,12 +14,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var installForce bool
+var (
+	installForce     bool
+	installNoContext bool
+)
 
 var installCmd = &cobra.Command{
 	Use:   "install",
 	Short: "Install skills and commands from manifest",
-	Long:  "Reads amaru.json, authenticates with registries, resolves versions, copies files, and generates amaru.lock.",
+	Long:  "Reads amaru.json, authenticates with registries, resolves versions, copies files, and generates amaru.lock.\nContext mounts declared in amaru.json are set up and synced too (--no-context skips them).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runInstall(cmd.Context())
 	},
@@ -27,6 +30,7 @@ var installCmd = &cobra.Command{
 
 func init() {
 	installCmd.Flags().BoolVar(&installForce, "force", false, "Reinstall even if lock exists and versions are compatible")
+	installCmd.Flags().BoolVar(&installNoContext, "no-context", false, "Skip the context mounts declared in amaru.json")
 	rootCmd.AddCommand(installCmd)
 }
 
@@ -74,7 +78,10 @@ func runInstall(ctx context.Context) error {
 	}
 	fmt.Println("\nLock file updated.")
 
-	return nil
+	if installNoContext {
+		return nil
+	}
+	return syncManifestContext(ctx, m)
 }
 
 func installItem(ctx context.Context, m *manifest.Manifest, lock *manifest.Lock, clients map[string]registry.Client, itemType, name string, spec manifest.DependencySpec, lockEntries map[string]manifest.LockedEntry) error {
@@ -202,13 +209,24 @@ func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpe
 		return alias, c, fetched, nil
 	}
 
-	var digestItems []string
-	var memberList []string
+	// Members are resolved first and fetched in one parallel batch — the loop
+	// used to download in series, so a first install paid a full round trip
+	// per member.
+	type memberPlan struct {
+		item        registry.SkillsetItem
+		alias       string
+		lockVersion string
+	}
+
+	// Keyed by "type/name" so the ordered member/digest lists can be rebuilt in
+	// skillset order after the parallel batch, keeping amaru.lock stable.
+	digestByMember := map[string]string{}
+	var plans []memberPlan
 	upToDate := 0
 	for _, item := range skillset.Items {
 		itemType := types.ItemType(item.Type)
 
-		itemAlias, itemClient, itemIdx, err := resolveItemRegistry(item)
+		itemAlias, _, itemIdx, err := resolveItemRegistry(item)
 		if err != nil {
 			return err
 		}
@@ -220,60 +238,78 @@ func installSkillset(ctx context.Context, name string, spec manifest.SkillsetSpe
 		}
 
 		version := entry.Latest
-		lockEntries := lock.EntriesForType(itemType)
+		lockVersion := version
+		if lockVersion == "" {
+			lockVersion = "latest"
+		}
 
 		// Skip only when the member is genuinely current: locked at the
 		// registry's latest version AND the disk matches the lock (or the
 		// drift was accepted with 'amaru ignore'). Presence alone used to
 		// skip here, so a member content bump never reached the disk.
 		if !installForce {
-			if locked, hasLock := lockEntries[item.Name]; hasLock {
-				lockVersion := version
-				if lockVersion == "" {
-					lockVersion = "latest"
-				}
+			if locked, hasLock := lock.EntriesForType(itemType)[item.Name]; hasLock {
 				current := locked.Version == lockVersion &&
 					installer.IsInstalled(".", item.Type, item.Name) &&
 					(m.IsIgnored(item.Name) || installer.LocalHash(".", item.Type, item.Name) == locked.Hash)
 				if current {
-					digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s@%s", item.Type, item.Name, lockVersion, itemAlias))
-					memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+					digestByMember[fmt.Sprintf("%s/%s", item.Type, item.Name)] = fmt.Sprintf("%s/%s/%s@%s", item.Type, item.Name, lockVersion, itemAlias)
 					upToDate++
 					continue
 				}
 			}
 		}
 
-		files, err := itemClient.DownloadFiles(ctx, item.Type, item.Name, version)
+		plans = append(plans, memberPlan{item: item, alias: itemAlias, lockVersion: lockVersion})
+	}
+
+	jobs := make([]downloadJob, len(plans))
+	for i, p := range plans {
+		_, itemClient, _, err := resolveItemRegistry(p.item)
 		if err != nil {
-			return fmt.Errorf("downloading %s %q from registry %q: %w", item.Type, item.Name, itemAlias, err)
+			return err
+		}
+		version := p.lockVersion
+		if version == "latest" {
+			version = ""
+		}
+		jobs[i] = downloadJob{Client: itemClient, ItemType: p.item.Type, Name: p.item.Name, Version: version}
+	}
+	downloadItems(ctx, jobs)
+
+	for i, p := range plans {
+		if jobs[i].Err != nil {
+			return fmt.Errorf("downloading %s %q from registry %q: %w", p.item.Type, p.item.Name, p.alias, jobs[i].Err)
 		}
 
-		hash, err := installer.Install(".", item.Type, item.Name, files)
+		hash, err := installer.Install(".", p.item.Type, p.item.Name, jobs[i].Files)
 		if err != nil {
-			return fmt.Errorf("installing %s %q: %w", item.Type, item.Name, err)
+			return fmt.Errorf("installing %s %q: %w", p.item.Type, p.item.Name, err)
 		}
 
-		lockVersion := version
-		if lockVersion == "" {
-			lockVersion = "latest"
-		}
-		lockEntries[item.Name] = manifest.NewLockedEntry(lockVersion, itemAlias, hash)
+		lock.EntriesForType(types.ItemType(p.item.Type))[p.item.Name] = manifest.NewLockedEntry(p.lockVersion, p.alias, hash)
 
 		// Encode the source alias into the digest so cross-registry skillsets
 		// invalidate correctly when an item moves to a different registry.
-		digestItems = append(digestItems, fmt.Sprintf("%s/%s/%s@%s", item.Type, item.Name, lockVersion, itemAlias))
-		memberList = append(memberList, fmt.Sprintf("%s/%s", item.Type, item.Name))
+		digestByMember[fmt.Sprintf("%s/%s", p.item.Type, p.item.Name)] = fmt.Sprintf("%s/%s/%s@%s", p.item.Type, p.item.Name, p.lockVersion, p.alias)
 
-		displayVersion := version
-		if displayVersion == "" {
-			displayVersion = "latest"
-		}
-		if itemAlias != regAlias {
-			ui.Check("  %s %s@%s [%s]", item.Type, item.Name, displayVersion, itemAlias)
+		if p.alias != regAlias {
+			ui.Check("  %s %s@%s [%s]", p.item.Type, p.item.Name, p.lockVersion, p.alias)
 		} else {
-			ui.Check("  %s %s@%s", item.Type, item.Name, displayVersion)
+			ui.Check("  %s %s@%s", p.item.Type, p.item.Name, p.lockVersion)
 		}
+	}
+
+	var digestItems []string
+	var memberList []string
+	for _, item := range skillset.Items {
+		memberKey := fmt.Sprintf("%s/%s", item.Type, item.Name)
+		digest, ok := digestByMember[memberKey]
+		if !ok {
+			continue
+		}
+		digestItems = append(digestItems, digest)
+		memberList = append(memberList, memberKey)
 	}
 
 	lock.Skillsets[name] = manifest.LockedSkillset{

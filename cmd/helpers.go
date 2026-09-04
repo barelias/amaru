@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/useamaru/amaru/internal/manifest"
 	"github.com/useamaru/amaru/internal/registry"
@@ -68,4 +69,53 @@ func buildClients(ctx context.Context, m *manifest.Manifest, silent bool) (map[s
 	}
 
 	return clients, nil
+}
+
+// maxParallelDownloads bounds how many registry items are fetched at once.
+// Each item still fans out internally over its own files, so this multiplies
+// with registry.maxConcurrent — 6 keeps a skillset install well inside
+// GitHub's secondary rate limits while removing the per-item round-trip stall.
+const maxParallelDownloads = 6
+
+// downloadJob is one item to fetch from a registry, plus the slot its result
+// lands in. Callers fill the request fields; downloadItems fills Files/Err.
+type downloadJob struct {
+	Client   registry.Client
+	ItemType string
+	Name     string
+	Version  string
+
+	Files []registry.File
+	Err   error
+}
+
+// downloadItems fetches every job concurrently, in place.
+//
+// jobs is the batch to fetch; each job's Files/Err are populated on return.
+// Installing stays with the caller and stays sequential — only the network
+// waits are overlapped, so output order and lock writes remain deterministic.
+func downloadItems(ctx context.Context, jobs []downloadJob) {
+	if len(jobs) == 0 {
+		return
+	}
+
+	sem := make(chan struct{}, maxParallelDownloads)
+	var wg sync.WaitGroup
+
+	for i := range jobs {
+		wg.Add(1)
+		go func(job *downloadJob) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				job.Err = ctx.Err()
+				return
+			}
+			defer func() { <-sem }()
+
+			job.Files, job.Err = job.Client.DownloadFiles(ctx, job.ItemType, job.Name, job.Version)
+		}(&jobs[i])
+	}
+	wg.Wait()
 }

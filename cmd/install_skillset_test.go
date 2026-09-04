@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
@@ -15,8 +16,11 @@ import (
 // fakeSSClient implements registry.Client with a mutable index — enough to
 // simulate a registry advancing between installs.
 type fakeSSClient struct {
-	idx       *registry.RegistryIndex
+	idx *registry.RegistryIndex
+	// files is read-only after construction; downloads is appended from the
+	// parallel download batch, so it needs the mutex.
 	files     map[string][]registry.File // key: "type/name/version"
+	mu        sync.Mutex
 	downloads []string
 }
 
@@ -30,7 +34,9 @@ func (f *fakeSSClient) ListVersions(ctx context.Context, itemType, name string) 
 
 func (f *fakeSSClient) DownloadFiles(ctx context.Context, itemType, name, version string) ([]registry.File, error) {
 	key := fmt.Sprintf("%s/%s/%s", itemType, name, version)
+	f.mu.Lock()
 	f.downloads = append(f.downloads, key)
+	f.mu.Unlock()
 	fs, ok := f.files[key]
 	if !ok {
 		return nil, fmt.Errorf("not found: %s", key)
